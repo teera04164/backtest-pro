@@ -212,7 +212,8 @@ const S = {
   playing: false, playTimer: null, speed: 400,
   csvMeta: null,
   panOffset: 0, isPanning: false, panStartX: 0, panStartOffset: 0,
-  viewBars: 80  // number of visible bars in viewport
+  viewBars: 80,  // number of visible bars in viewport
+  mouseX: 0, mouseY: 0, hoveredBar: null
 };
 
 // ── CANVAS ────────────────────────────────────────────────────────────────
@@ -455,16 +456,23 @@ cv.addEventListener('mousedown', e => {
   S.panStartOffset = S.panOffset;
   cv.style.cursor = 'grabbing';
 });
-window.addEventListener('mousemove', e => {
-  if (!S.isPanning) return;
-  const data = bars();
-  if (!data.length) return;
-  const W = cv.width / (window.devicePixelRatio || 1);
-  const pad = {l:6, r:80};
-  const cW = (W - pad.l - pad.r) / Math.min(data.length, S.viewBars);
-  const dx = e.clientX - S.panStartX;
-  S.panOffset = S.panStartOffset + Math.round(dx / cW);
-  draw();
+cv.addEventListener('mousemove', e => {
+  const rect = cv.getBoundingClientRect();
+  S.mouseX = e.clientX - rect.left;
+  S.mouseY = e.clientY - rect.top;
+  
+  if (S.isPanning) {
+    const data = bars();
+    if (!data.length) return;
+    const W = cv.width / (window.devicePixelRatio || 1);
+    const pad = {l:6, r:80};
+    const cW = (W - pad.l - pad.r) / Math.min(data.length, S.viewBars);
+    const dx = e.clientX - S.panStartX;
+    S.panOffset = S.panStartOffset + Math.round(dx / cW);
+    draw();
+  } else if (S.tab === 'candle') {
+    checkHover();
+  }
 });
 window.addEventListener('mouseup', () => {
   if (S.isPanning) { S.isPanning = false; cv.style.cursor = 'crosshair'; }
@@ -529,6 +537,83 @@ function fmtTShort(ms) {
   if (tf==='1wk'||tf==='1W'||tf==='1mo'||tf==='1Mo'||tf==='1D'||tf==='1d')
     return dd+'/'+mm+'/'+yy;
   return dd+'/'+mm+' '+String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
+}
+
+function checkHover() {
+  const data = bars();
+  if (!data.length) {
+    S.hoveredBar = null;
+    return;
+  }
+  
+  const W = cv.width / (window.devicePixelRatio || 1);
+  const H = cv.height / (window.devicePixelRatio || 1);
+  const pad = {l:6, r:80, t:10, b:70};
+  
+  // Calculate viewport
+  const totalBars = data.length;
+  let endIdx = totalBars + S.panOffset;
+  let startIdx = endIdx - S.viewBars;
+  if (startIdx < 0) { startIdx = 0; endIdx = Math.min(S.viewBars, totalBars); }
+  if (endIdx > totalBars) { endIdx = totalBars; startIdx = Math.max(0, endIdx - S.viewBars); }
+  const visData = data.slice(startIdx, endIdx);
+  
+  const cW = (W - pad.l - pad.r) / Math.max(visData.length, 1);
+  
+  // Check which bar is hovered
+  let hoveredBar = null;
+  for (let i = 0; i < visData.length; i++) {
+    const barX = pad.l + (i + 0.5) * cW;
+    if (Math.abs(S.mouseX - barX) <= cW / 2) {
+      hoveredBar = visData[i];
+      break;
+    }
+  }
+  
+  if (hoveredBar !== S.hoveredBar) {
+    S.hoveredBar = hoveredBar;
+    draw();
+  }
+}
+
+function drawTooltip(W, H, pad) {
+  if (!S.hoveredBar || S.tab !== 'candle') return;
+  
+  const d = new Date(S.hoveredBar.t);
+  const dateStr = d.getUTCFullYear() + '-' + 
+    String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + 
+    String(d.getUTCDate()).padStart(2, '0');
+  const priceStr = `O: ${fmtP(S.hoveredBar.o)} H: ${fmtP(S.hoveredBar.h)} L: ${fmtP(S.hoveredBar.l)} C: ${fmtP(S.hoveredBar.c)}`;
+  
+  const padding = 8;
+  const lineHeight = 16;
+  const boxWidth = Math.max(ctx.measureText(dateStr).width, ctx.measureText(priceStr).width) + padding * 2;
+  const boxHeight = lineHeight * 2 + padding * 2;
+  
+  let tooltipX = S.mouseX + 15;
+  let tooltipY = S.mouseY - boxHeight - 10;
+  
+  // Keep tooltip within canvas bounds
+  if (tooltipX + boxWidth > W) tooltipX = S.mouseX - boxWidth - 15;
+  if (tooltipY < 0) tooltipY = S.mouseY + 15;
+  
+  // Draw tooltip background
+  ctx.fillStyle = 'rgba(30, 30, 30, 0.95)';
+  ctx.fillRect(tooltipX, tooltipY, boxWidth, boxHeight);
+  
+  // Draw tooltip border
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(tooltipX, tooltipY, boxWidth, boxHeight);
+  
+  // Draw tooltip text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '12px Inter, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  
+  ctx.fillText(dateStr, tooltipX + padding, tooltipY + lineHeight / 2);
+  ctx.fillText(priceStr, tooltipX + padding, tooltipY + lineHeight + lineHeight / 2);
 }
 
 function drawCandle(W,H,pad,data) {
@@ -625,6 +710,9 @@ function drawCandle(W,H,pad,data) {
     ctx.fillStyle='rgba(59,130,246,0.9)';
     ctx.beginPath(); ctx.arc(pad.l+(lastVisIdx+.5)*cW, toY(last.c), 3, 0, Math.PI*2); ctx.fill();
   }
+  
+  // Draw tooltip on hover
+  drawTooltip(W, H, pad);
 }
 
 function drawPnl(W,H,pad) {
