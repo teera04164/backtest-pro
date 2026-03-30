@@ -92,6 +92,9 @@
   <span class="quick-trade-label">Quick Trade</span>
   <button class="qt-btn buy-btn" onclick="quickPlaceOrder('long')">📈 BUY/LONG</button>
   <button class="qt-btn sell-btn" onclick="quickPlaceOrder('short')">📉 SELL/SHORT</button>
+  <div style="flex:1"></div>
+  <button class="qt-btn session-btn" onclick="showSaveSessionDialog()">💾 Save Session</button>
+  <button class="qt-btn session-btn" onclick="showLoadSessionDialog()">📂 Load Session</button>
 </div>
 
 <!-- STATUS -->
@@ -225,6 +228,89 @@
 </div>
 
 <div class="notif" id="notif"></div>
+
+<!-- SESSION SAVE DIALOG -->
+<div class="modal" id="saveSessionDialog" style="display:none">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>💾 Save Trading Session</h3>
+      <button class="modal-close" onclick="closeSaveSessionDialog()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Session Name:</label>
+        <input type="text" id="sessionNameInput" placeholder="My Trading Session" maxlength="50">
+      </div>
+      <div class="form-group">
+        <label>Notes (optional):</label>
+        <textarea id="sessionNotesInput" placeholder="Add notes about this trading session..." rows="3"></textarea>
+      </div>
+      <div class="session-summary">
+        <h4>Current Session Summary:</h4>
+        <div class="summary-grid">
+          <div class="summary-item">
+            <span class="summary-label">Symbol:</span>
+            <span class="summary-value" id="summarySymbol">—</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Timeframe:</span>
+            <span class="summary-value" id="summaryTimeframe">—</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Current Bar:</span>
+            <span class="summary-value" id="summaryCurrentBar">—</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Current Date:</span>
+            <span class="summary-value" id="summaryCurrentDate">—</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Balance:</span>
+            <span class="summary-value" id="summaryBalance">—</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Open Positions:</span>
+            <span class="summary-value" id="summaryOpenPositions">—</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Total Trades:</span>
+            <span class="summary-value" id="summaryTotalTrades">—</span>
+          </div>
+          <div class="summary-item">
+            <span class="summary-label">Net P&L:</span>
+            <span class="summary-value" id="summaryNetPnL">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="abtn ghost" onclick="closeSaveSessionDialog()">Cancel</button>
+      <button class="abtn" onclick="saveSession()">Save Session</button>
+    </div>
+  </div>
+</div>
+
+<!-- SESSION LOAD DIALOG -->
+<div class="modal" id="loadSessionDialog" style="display:none">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>📂 Load Trading Session</h3>
+      <button class="modal-close" onclick="closeLoadSessionDialog()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Saved Sessions:</label>
+        <div class="sessions-list" id="sessionsList">
+          <div class="empty-sessions">No saved sessions found</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="abtn ghost" onclick="closeLoadSessionDialog()">Cancel</button>
+      <button class="abtn" onclick="exportAllSessions()">Export All</button>
+    </div>
+  </div>
+</div>
 
 <script src="constants.js"></script>
 <script>
@@ -1256,6 +1342,262 @@ function notif(msg,type){
   const el=document.getElementById('notif');el.textContent=msg;
   el.className='notif '+type+' show';
   clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),3500);
+}
+
+// ── SESSION MANAGEMENT ───────────────────────────────────────────────────────
+function showSaveSessionDialog() {
+  if (!S.allBars.length) {
+    notif('No data to save. Please load data first.', 'warn');
+    return;
+  }
+  
+  // Update summary
+  const open = S.orders.filter(o => o.status === 'open');
+  const closed = S.orders.filter(o => o.status === 'closed');
+  const totalPnL = closed.reduce((sum, o) => sum + o.pnl, 0);
+  const currentBar = S.allBars[S.visIdx - 1];
+  
+  document.getElementById('summarySymbol').textContent = S.sym || '—';
+  document.getElementById('summaryTimeframe').textContent = S.tf || '—';
+  document.getElementById('summaryCurrentBar').textContent = S.visIdx + ' / ' + S.allBars.length;
+  document.getElementById('summaryCurrentDate').textContent = currentBar ? formatDate(currentBar.t) : '—';
+  document.getElementById('summaryBalance').textContent = '$' + S.bal.toFixed(2);
+  document.getElementById('summaryOpenPositions').textContent = open.length;
+  document.getElementById('summaryTotalTrades').textContent = S.orders.length;
+  document.getElementById('summaryNetPnL').textContent = (totalPnL >= 0 ? '+' : '') + '$' + totalPnL.toFixed(2);
+  
+  // Clear inputs
+  document.getElementById('sessionNameInput').value = '';
+  document.getElementById('sessionNotesInput').value = '';
+  
+  // Show dialog
+  document.getElementById('saveSessionDialog').style.display = 'flex';
+  document.getElementById('sessionNameInput').focus();
+}
+
+function closeSaveSessionDialog() {
+  document.getElementById('saveSessionDialog').style.display = 'none';
+}
+
+function saveSession() {
+  const name = document.getElementById('sessionNameInput').value.trim();
+  const notes = document.getElementById('sessionNotesInput').value.trim();
+  
+  if (!name) {
+    notif('Please enter a session name', 'warn');
+    return;
+  }
+  
+  const session = {
+    id: Date.now(),
+    name: name,
+    notes: notes,
+    savedAt: new Date().toISOString(),
+    data: {
+      sym: S.sym,
+      tf: S.tf,
+      source: S.source,
+      csvMeta: S.csvMeta,
+      allBars: S.allBars,
+      visIdx: S.visIdx,
+      orders: S.orders,
+      oid: S.oid,
+      bal: S.bal,
+      startBal: S.startBal,
+      side: S.side,
+      settings: {
+        capital: document.getElementById('cCap').value,
+        fee: document.getElementById('cFee').value,
+        leverage: document.getElementById('oLev').value,
+        stopLoss: document.getElementById('oSL').value,
+        takeProfit: document.getElementById('oTP').value,
+        amount: document.getElementById('oQty').value,
+        startBar: document.getElementById('startBarInput').value
+      }
+    }
+  };
+  
+  // Save to localStorage
+  const sessions = JSON.parse(localStorage.getItem('tradingSessions') || '[]');
+  sessions.push(session);
+  localStorage.setItem('tradingSessions', JSON.stringify(sessions));
+  
+  closeSaveSessionDialog();
+  notif(`Session "${name}" saved successfully!`, 'pos');
+}
+
+function showLoadSessionDialog() {
+  const sessions = JSON.parse(localStorage.getItem('tradingSessions') || '[]');
+  const sessionsList = document.getElementById('sessionsList');
+  
+  if (sessions.length === 0) {
+    sessionsList.innerHTML = '<div class="empty-sessions">No saved sessions found</div>';
+  } else {
+    sessionsList.innerHTML = sessions.map(session => {
+      const date = new Date(session.savedAt);
+      const open = session.data.orders.filter(o => o.status === 'open').length;
+      const total = session.data.orders.length;
+      const pnl = session.data.orders
+        .filter(o => o.status === 'closed')
+        .reduce((sum, o) => sum + o.pnl, 0);
+      
+      return `
+        <div class="session-item" onclick="loadSession(${session.id})">
+          <div class="session-item-header">
+            <span class="session-name">${session.name}</span>
+            <span class="session-date">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</span>
+          </div>
+          ${session.notes ? `<div class="session-notes">${session.notes}</div>` : ''}
+          <div class="session-stats">
+            <span>${session.data.sym} ${session.data.tf}</span>
+            <span>Open: ${open}</span>
+            <span>Total: ${total}</span>
+            <span>P&L: ${(pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2)}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+  
+  document.getElementById('loadSessionDialog').style.display = 'flex';
+}
+
+function closeLoadSessionDialog() {
+  document.getElementById('loadSessionDialog').style.display = 'none';
+}
+
+function loadSession(sessionId) {
+  const sessions = JSON.parse(localStorage.getItem('tradingSessions') || '[]');
+  const session = sessions.find(s => s.id === sessionId);
+  
+  if (!session) {
+    notif('Session not found', 'warn');
+    return;
+  }
+  
+  // Restore session data
+  const data = session.data;
+  S.sym = data.sym;
+  S.tf = data.tf;
+  S.source = data.source;
+  S.csvMeta = data.csvMeta;
+  S.allBars = data.allBars;
+  S.visIdx = data.visIdx;
+  S.orders = data.orders;
+  S.oid = data.oid;
+  S.bal = data.bal;
+  S.startBal = data.startBal;
+  S.side = data.side;
+  
+  // Restore form settings
+  document.getElementById('cCap').value = data.settings.capital;
+  document.getElementById('cFee').value = data.settings.fee;
+  document.getElementById('oLev').value = data.settings.leverage;
+  document.getElementById('oSL').value = data.settings.stopLoss;
+  document.getElementById('oTP').value = data.settings.takeProfit;
+  document.getElementById('oQty').value = data.settings.amount;
+  document.getElementById('startBarInput').value = data.settings.startBar;
+  
+  // Update UI
+  if (S.source === 'csv' && S.csvMeta) {
+    document.getElementById('csvPanel').classList.add('show');
+    document.getElementById('csvLoadedInfo').style.display = 'flex';
+    document.getElementById('dropZone').style.display = 'none';
+    document.getElementById('metaSym').textContent = S.csvMeta.sym;
+    document.getElementById('metaTf').textContent = S.csvMeta.tf;
+    document.getElementById('metaBars').textContent = S.allBars.length;
+    document.getElementById('metaFrom').textContent = formatDate(S.allBars[0].t);
+    document.getElementById('metaTo').textContent = formatDate(S.allBars[S.allBars.length - 1].t);
+    
+    // Set date input min/max values
+    const dateInput = document.getElementById('startDateInput');
+    dateInput.min = formatDate(S.allBars[0].t);
+    dateInput.max = formatDate(S.allBars[S.allBars.length - 1].t);
+    
+    // Topbar pills
+    document.getElementById('csvInfo').style.display = 'flex';
+    document.getElementById('csvSymPill').style.display = 'inline-block';
+    document.getElementById('csvSymPill').textContent = S.csvMeta.sym;
+    document.getElementById('csvTfPill').textContent = S.csvMeta.tf;
+    document.getElementById('csvRowsPill').textContent = S.allBars.length + ' bars';
+  }
+  
+  closeLoadSessionDialog();
+  refreshAll();
+  notif(`Session "${session.name}" loaded successfully!`, 'pos');
+}
+
+function deleteSession(sessionId) {
+  if (!confirm('Are you sure you want to delete this session?')) {
+    return;
+  }
+  
+  const sessions = JSON.parse(localStorage.getItem('tradingSessions') || '[]');
+  const filtered = sessions.filter(s => s.id !== sessionId);
+  localStorage.setItem('tradingSessions', JSON.stringify(filtered));
+  
+  showLoadSessionDialog(); // Refresh the list
+  notif('Session deleted', 'info');
+}
+
+function exportAllSessions() {
+  const sessions = JSON.parse(localStorage.getItem('tradingSessions') || '[]');
+  
+  if (sessions.length === 0) {
+    notif('No sessions to export', 'warn');
+    return;
+  }
+  
+  const exportData = {
+    version: '1.0',
+    exportedAt: new Date().toISOString(),
+    sessions: sessions
+  };
+  
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `trading-sessions-${new Date().toISOString().split('T')[0]}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  notif(`Exported ${sessions.length} sessions`, 'pos');
+}
+
+function importSessions(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const importData = JSON.parse(e.target.result);
+      
+      if (!importData.sessions || !Array.isArray(importData.sessions)) {
+        throw new Error('Invalid session file format');
+      }
+      
+      const existingSessions = JSON.parse(localStorage.getItem('tradingSessions') || '[]');
+      const mergedSessions = [...existingSessions, ...importData.sessions];
+      
+      // Remove duplicates by ID
+      const uniqueSessions = mergedSessions.filter((session, index, arr) => 
+        arr.findIndex(s => s.id === session.id) === index
+      );
+      
+      localStorage.setItem('tradingSessions', JSON.stringify(uniqueSessions));
+      notif(`Imported ${importData.sessions.length} sessions`, 'pos');
+      showLoadSessionDialog(); // Refresh the list
+      
+    } catch (error) {
+      notif('Failed to import sessions: ' + error.message, 'warn');
+    }
+  };
+  
+  reader.readAsText(file);
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────
