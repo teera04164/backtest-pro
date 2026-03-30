@@ -2,6 +2,8 @@
 
 // Store update data globally for the session
 let sessionUpdateData = null;
+let sessionSuggestions = [];
+let selectedSuggestionIndex = -1;
 
 window.showSaveSessionDialog = async function() {
   if (!S.allBars.length) {
@@ -27,11 +29,147 @@ window.showSaveSessionDialog = async function() {
   // Clear inputs
   document.getElementById('sessionNameInput').value = '';
   document.getElementById('sessionNotesInput').value = '';
+  document.getElementById('sessionReplaceWarning').style.display = 'none';
+  hideSessionSuggestions();
+  
+  // Load existing sessions for suggestions
+  await loadSessionSuggestions();
   
   // Show dialog
   document.getElementById('saveSessionDialog').style.display = 'flex';
   document.getElementById('sessionNameInput').focus();
 }
+
+async function loadSessionSuggestions() {
+  try {
+    const sessions = await sessionDB.getAllSessions();
+    sessionSuggestions = sessions.map(session => ({
+      id: session.id,
+      name: session.name,
+      symbol: session.data.sym,
+      timeframe: session.data.tf,
+      savedAt: session.savedAt
+    }));
+  } catch (error) {
+    console.error('Failed to load session suggestions:', error);
+    sessionSuggestions = [];
+  }
+}
+
+window.showSessionSuggestions = function() {
+  if (sessionSuggestions.length === 0) return;
+  
+  const suggestionsDiv = document.getElementById('sessionNameSuggestions');
+  const currentValue = document.getElementById('sessionNameInput').value.toLowerCase();
+  
+  // Filter suggestions based on input
+  const filteredSuggestions = sessionSuggestions.filter(session => 
+    session.name.toLowerCase().includes(currentValue)
+  );
+  
+  if (filteredSuggestions.length === 0) {
+    hideSessionSuggestions();
+    return;
+  }
+  
+  // Generate suggestion HTML
+  suggestionsDiv.innerHTML = filteredSuggestions.map((session, index) => {
+    const date = new Date(session.savedAt);
+    const dateStr = date.toLocaleDateString();
+    
+    return `
+      <div class="session-suggestion-item" onclick="selectSessionSuggestion('${session.name}')" 
+           onmouseover="highlightSuggestion(${index})" data-index="${index}">
+        <span class="session-suggestion-name">${session.name}</span>
+        <span class="session-suggestion-meta">${session.symbol} ${session.timeframe} • ${dateStr}</span>
+      </div>
+    `;
+  }).join('');
+  
+  suggestionsDiv.style.display = 'block';
+  selectedSuggestionIndex = -1;
+}
+
+window.hideSessionSuggestions = function() {
+  document.getElementById('sessionNameSuggestions').style.display = 'none';
+  selectedSuggestionIndex = -1;
+}
+
+window.handleSessionNameInput = function(value) {
+  const warningDiv = document.getElementById('sessionReplaceWarning');
+  const existingSession = sessionSuggestions.find(session => 
+    session.name.toLowerCase() === value.toLowerCase()
+  );
+  
+  if (existingSession && value.trim()) {
+    warningDiv.style.display = 'flex';
+  } else {
+    warningDiv.style.display = 'none';
+  }
+  
+  // Update suggestions
+  showSessionSuggestions();
+}
+
+window.selectSessionSuggestion = function(name) {
+  document.getElementById('sessionNameInput').value = name;
+  handleSessionNameInput(name);
+  hideSessionSuggestions();
+}
+
+window.highlightSuggestion = function(index) {
+  const items = document.querySelectorAll('.session-suggestion-item');
+  items.forEach((item, i) => {
+    if (i === index) {
+      item.classList.add('selected');
+    } else {
+      item.classList.remove('selected');
+    }
+  });
+  selectedSuggestionIndex = index;
+}
+
+// Handle keyboard navigation for suggestions
+document.addEventListener('keydown', function(event) {
+  const suggestionsDiv = document.getElementById('sessionNameSuggestions');
+  const input = document.getElementById('sessionNameInput');
+  
+  if (suggestionsDiv.style.display === 'none') return;
+  
+  const items = document.querySelectorAll('.session-suggestion-item');
+  
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    selectedSuggestionIndex = Math.min(selectedSuggestionIndex + 1, items.length - 1);
+    highlightSuggestion(selectedSuggestionIndex);
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    selectedSuggestionIndex = Math.max(selectedSuggestionIndex - 1, -1);
+    if (selectedSuggestionIndex === -1) {
+      input.focus();
+    } else {
+      highlightSuggestion(selectedSuggestionIndex);
+    }
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    if (selectedSuggestionIndex >= 0) {
+      const selectedItem = items[selectedSuggestionIndex];
+      const name = selectedItem.querySelector('.session-suggestion-name').textContent;
+      selectSessionSuggestion(name);
+    }
+  } else if (event.key === 'Escape') {
+    hideSessionSuggestions();
+    input.focus();
+  }
+});
+
+// Hide suggestions when clicking outside
+document.addEventListener('click', function(event) {
+  const wrapper = document.querySelector('.session-name-input-wrapper');
+  if (wrapper && !wrapper.contains(event.target)) {
+    hideSessionSuggestions();
+  }
+});
 
 window.closeSaveSessionDialog = function() {
   document.getElementById('saveSessionDialog').style.display = 'none';
@@ -46,39 +184,67 @@ window.saveSession = async function() {
     return;
   }
   
-  const session = {
-    id: Date.now(),
-    name: name,
-    notes: notes,
-    savedAt: new Date().toISOString(),
-    data: {
-      sym: S.sym,
-      tf: S.tf,
-      source: S.source,
-      csvMeta: S.csvMeta,
-      allBars: S.allBars,
-      visIdx: S.visIdx,
-      orders: S.orders,
-      oid: S.oid,
-      bal: S.bal,
-      startBal: S.startBal,
-      side: S.side,
-      settings: {
-        capital: document.getElementById('cCap').value,
-        fee: document.getElementById('cFee').value,
-        leverage: document.getElementById('oLev').value,
-        stopLoss: document.getElementById('oSL').value,
-        takeProfit: document.getElementById('oTP').value,
-        amount: document.getElementById('oQty').value,
-        startBar: document.getElementById('startBarInput').value
-      }
-    }
-  };
-  
   try {
+    // Check if session with this name already exists
+    const existingSession = sessionSuggestions.find(session => 
+      session.name.toLowerCase() === name.toLowerCase()
+    );
+    
+    let sessionId;
+    let isReplacing = false;
+    
+    if (existingSession) {
+      // Confirm replacement
+      if (!confirm(`A session named "${name}" already exists. Do you want to replace it?`)) {
+        return;
+      }
+      
+      // Delete existing session
+      await sessionDB.deleteSession(existingSession.id);
+      sessionId = existingSession.id;
+      isReplacing = true;
+    } else {
+      // Create new session ID
+      sessionId = Date.now();
+    }
+    
+    const session = {
+      id: sessionId,
+      name: name,
+      notes: notes,
+      savedAt: new Date().toISOString(),
+      data: {
+        sym: S.sym,
+        tf: S.tf,
+        source: S.source,
+        csvMeta: S.csvMeta,
+        allBars: S.allBars,
+        visIdx: S.visIdx,
+        orders: S.orders,
+        oid: S.oid,
+        bal: S.bal,
+        startBal: S.startBal,
+        side: S.side,
+        settings: {
+          capital: document.getElementById('cCap').value,
+          fee: document.getElementById('cFee').value,
+          leverage: document.getElementById('oLev').value,
+          stopLoss: document.getElementById('oSL').value,
+          takeProfit: document.getElementById('oTP').value,
+          amount: document.getElementById('oQty').value,
+          startBar: document.getElementById('startBarInput').value
+        }
+      }
+    };
+    
     await sessionDB.addSession(session);
     closeSaveSessionDialog();
-    notif(`Session "${name}" saved successfully!`, 'pos');
+    
+    if (isReplacing) {
+      notif(`Session "${name}" replaced successfully!`, 'pos');
+    } else {
+      notif(`Session "${name}" saved successfully!`, 'pos');
+    }
   } catch (error) {
     console.error('Failed to save session:', error);
     notif('Failed to save session', 'warn');

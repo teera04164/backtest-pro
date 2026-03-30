@@ -239,14 +239,23 @@
     <div class="modal-body">
       <div class="form-group">
         <label>Session Name:</label>
-        <input type="text" id="sessionNameInput" placeholder="My Trading Session" maxlength="50">
+        <div class="session-name-input-wrapper">
+          <input type="text" id="sessionNameInput" placeholder="My Trading Session" maxlength="50" 
+                 oninput="handleSessionNameInput(this.value)" onfocus="showSessionSuggestions()">
+          <div id="sessionNameSuggestions" class="session-suggestions" style="display:none"></div>
+        </div>
+        <div id="sessionReplaceWarning" class="session-replace-warning" style="display:none">
+          <span>⚠️ A session with this name already exists. This will replace the existing session.</span>
+        </div>
       </div>
       <div class="form-group">
         <label>Notes (optional):</label>
         <textarea id="sessionNotesInput" placeholder="Add notes about this trading session..." rows="3"></textarea>
       </div>
+      
+      <!-- Summary Section -->
       <div class="session-summary">
-        <h4>Current Session Summary:</h4>
+        <h4>Session Summary:</h4>
         <div class="summary-grid">
           <div class="summary-item">
             <span class="summary-label">Symbol:</span>
