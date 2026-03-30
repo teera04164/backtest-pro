@@ -326,7 +326,14 @@ select option{background:var(--bg2);}
         <input type="number" id="oPrice" placeholder="0.00" step="0.01">
       </div>
       <div class="fg2">
-        <div class="frow"><div class="flbl">Amount (USD)</div><input type="number" id="oQty" value="200" min="1"></div>
+        <div class="frow">
+          <div class="flbl">Amount (USD)</div>
+          <div style="display:flex;gap:3px;align-items:center">
+            <input type="number" id="oQty" value="200" min="1" style="flex:1">
+            <button class="abtn ghost" style="padding:3px 6px;font-size:9px;white-space:nowrap" onclick="document.getElementById('oQty').value=Math.round(+document.getElementById('oQty').value/2)">÷2</button>
+            <button class="abtn" style="padding:3px 6px;font-size:9px;white-space:nowrap" onclick="document.getElementById('oQty').value=+document.getElementById('oQty').value*2">×2</button>
+          </div>
+        </div>
         <div class="frow"><div class="flbl">Leverage</div>
           <select id="oLev">
             <option value="1" selected>1x</option><option value="2">2x</option>
@@ -347,8 +354,14 @@ select option{background:var(--bg2);}
         <div class="frow"><div class="flbl">Capital ($)</div><input type="number" id="cCap" value="10000" min="100"></div>
         <div class="frow"><div class="flbl">Fee %</div><input type="number" id="cFee" value="0.1" step="0.01"></div>
       </div>
+      <div class="frow" style="margin-top:5px">
+        <div class="flbl">Start Bar (เริ่มที่แท่งที่)</div>
+        <div style="display:flex;gap:3px;align-items:center">
+          <input type="number" id="startBarInput" value="60" min="1" style="flex:1">
+          <button class="abtn" style="padding:3px 8px;font-size:10px" onclick="jumpToStartBar()">Go</button>
+        </div>
+      </div>
     </div>
-  </div>
 
     <div class="psec" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
       <div class="stitle">Open Positions <span style="color:var(--accent);font-size:9px" id="openCount"></span></div>
@@ -368,7 +381,9 @@ const S = {
   allBars: [], visIdx: 0,
   orders: [], oid: 1, tab: 'candle',
   playing: false, playTimer: null, speed: 400,
-  csvMeta: null
+  csvMeta: null,
+  panOffset: 0, isPanning: false, panStartX: 0, panStartOffset: 0,
+  viewBars: 80  // number of visible bars in viewport
 };
 
 // ── CANVAS ────────────────────────────────────────────────────────────────
@@ -532,6 +547,19 @@ function formatDate(ms) {
 function bars() { return S.allBars.slice(0, S.visIdx); }
 function lastBar() { return S.allBars[S.visIdx-1] || null; }
 
+function jumpToStartBar() {
+  const v = +document.getElementById('startBarInput').value;
+  if (v < 1 || v > S.allBars.length) { notif('Bar number out of range', 'warn'); return; }
+  stopPlay();
+  S.visIdx = v;
+  S.orders = []; S.oid = 1;
+  S.startBal = +document.getElementById('cCap').value || 10000;
+  S.bal = S.startBal;
+  S.panOffset = 0;
+  refreshAll();
+  notif(`เริ่ม backtest ที่แท่งที่ ${v}`, 'info');
+}
+
 function stepNext() { if (S.visIdx >= S.allBars.length) { stopPlay(); return; } S.visIdx++; checkSLTP(); refreshAll(); }
 function stepBack() { if (S.visIdx <= 1) return; S.visIdx--; refreshAll(); }
 function goToEnd() { stopPlay(); while (S.visIdx < S.allBars.length) { S.visIdx++; checkSLTP(); } refreshAll(); }
@@ -579,6 +607,37 @@ function autoClose(o, xp, reason, feeRate) {
 }
 
 // ── DRAW ──────────────────────────────────────────────────────────────────
+
+// Chart panning
+cv.addEventListener('mousedown', e => {
+  if (S.tab !== 'candle') return;
+  S.isPanning = true;
+  S.panStartX = e.clientX;
+  S.panStartOffset = S.panOffset;
+  cv.style.cursor = 'grabbing';
+});
+window.addEventListener('mousemove', e => {
+  if (!S.isPanning) return;
+  const data = bars();
+  if (!data.length) return;
+  const W = cv.width / (window.devicePixelRatio || 1);
+  const pad = {l:6, r:80};
+  const cW = (W - pad.l - pad.r) / Math.min(data.length, S.viewBars);
+  const dx = e.clientX - S.panStartX;
+  S.panOffset = S.panStartOffset + Math.round(dx / cW);
+  draw();
+});
+window.addEventListener('mouseup', () => {
+  if (S.isPanning) { S.isPanning = false; cv.style.cursor = 'crosshair'; }
+});
+cv.addEventListener('wheel', e => {
+  if (S.tab !== 'candle') return;
+  e.preventDefault();
+  S.viewBars = Math.max(20, Math.min(bars().length, S.viewBars + (e.deltaY > 0 ? 10 : -10)));
+  draw();
+}, { passive: false });
+cv.style.cursor = 'crosshair';
+
 function draw() {
   const W = cv.width/(window.devicePixelRatio||1);
   const H = cv.height/(window.devicePixelRatio||1);
@@ -624,21 +683,31 @@ function fmtT(ms) {
 }
 
 function drawCandle(W,H,pad,data) {
-  const vs=data.flatMap(d=>[d.h,d.l]);
+  // Pan viewport: show only S.viewBars candles with panOffset
+  const totalBars = data.length;
+  let endIdx = totalBars + S.panOffset;
+  let startIdx = endIdx - S.viewBars;
+  // Clamp
+  if (startIdx < 0) { startIdx = 0; endIdx = Math.min(S.viewBars, totalBars); }
+  if (endIdx > totalBars) { endIdx = totalBars; startIdx = Math.max(0, endIdx - S.viewBars); }
+  const visData = data.slice(startIdx, endIdx);
+  if (!visData.length) return;
+
+  const vs=visData.flatMap(d=>[d.h,d.l]);
   let yMn=Math.min(...vs),yMx=Math.max(...vs);
   const mg=(yMx-yMn)*.06; yMn-=mg; yMx+=mg;
-  const cW=(W-pad.l-pad.r)/Math.max(data.length,1);
+  const cW=(W-pad.l-pad.r)/Math.max(visData.length,1);
   const bW=Math.max(1,cW*.65);
   grid(W,H,pad,yMn,yMx,6,fmtP);
   const toY=v=>pad.t+(yMx-v)/(yMx-yMn)*(H-pad.t-pad.b);
 
   // X labels
   ctx.fillStyle='#64748b'; ctx.font='9px Inter,sans-serif'; ctx.textAlign='center';
-  const step=Math.max(1,Math.floor(data.length/7));
-  for (let i=0;i<data.length;i+=step) ctx.fillText(fmtT(data[i].t), pad.l+(i+.5)*cW, H-pad.b+13);
+  const step=Math.max(1,Math.floor(visData.length/7));
+  for (let i=0;i<visData.length;i+=step) ctx.fillText(fmtT(visData[i].t), pad.l+(i+.5)*cW, H-pad.b+13);
 
   // Candles
-  data.forEach((d,i) => {
+  visData.forEach((d,i) => {
     const x=pad.l+(i+.5)*cW;
     const isUp=d.c>=d.o;
     const col=isUp?'#10b981':'#ef4444';
@@ -648,11 +717,12 @@ function drawCandle(W,H,pad,data) {
     ctx.fillRect(x-bW/2, bT, bW, Math.max(1,bB-bT));
   });
 
-  // Order markers
+  // Order markers (need to remap to viewport)
   S.orders.forEach(ord => {
     const idx=S.allBars.findIndex(b=>b.t>=ord.time);
-    if (idx<0||idx>=data.length) return;
-    const x=pad.l+(idx+.5)*cW;
+    const visI = idx - startIdx;
+    if (visI<0||visI>=visData.length) return;
+    const x=pad.l+(visI+.5)*cW;
     const y=toY(ord.ep);
     const isL=ord.side==='long';
     ctx.fillStyle=isL?'#10b981':'#ef4444';
@@ -677,7 +747,8 @@ function drawCandle(W,H,pad,data) {
   });
 
   // Current price line
-  const last=data[data.length-1];
+  const lastVisIdx = visData.length - 1;
+  const last=visData[lastVisIdx];
   const py=toY(last.c);
   const isUp=last.c>=last.o;
   ctx.strokeStyle=isUp?'rgba(16,185,129,0.5)':'rgba(239,68,68,0.5)';
@@ -686,8 +757,10 @@ function drawCandle(W,H,pad,data) {
   ctx.fillStyle=isUp?'#10b981':'#ef4444';
   ctx.font='bold 9px Space Mono,monospace'; ctx.textAlign='left';
   ctx.fillText(fmtP(last.c), W-pad.r+3, py+3);
-  ctx.fillStyle='rgba(59,130,246,0.9)';
-  ctx.beginPath(); ctx.arc(pad.l+(data.length-.5)*cW, toY(last.c), 3, 0, Math.PI*2); ctx.fill();
+  if (endIdx === totalBars) {
+    ctx.fillStyle='rgba(59,130,246,0.9)';
+    ctx.beginPath(); ctx.arc(pad.l+(lastVisIdx+.5)*cW, toY(last.c), 3, 0, Math.PI*2); ctx.fill();
+  }
 }
 
 function drawPnl(W,H,pad) {
