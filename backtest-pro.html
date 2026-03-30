@@ -186,14 +186,18 @@
       <div class="frow" style="margin-top:5px">
         <div class="flbl">Start Bar (เริ่มที่แท่งที่)</div>
         <div style="display:flex;gap:3px;align-items:center">
-          <input type="number" id="startBarInput" value="60" min="1" style="flex:1">
+          <input type="number" id="startBarInput" value="60" min="1" style="flex:1" placeholder="Bar #">
+          <input type="date" id="startDateInput" style="flex:1" title="Start from date">
           <button class="abtn" style="padding:3px 8px;font-size:10px" onclick="jumpToStartBar()">Go</button>
         </div>
       </div>
     </div>
 
     <div class="psec" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
-      <div class="stitle">Open Positions <span style="color:var(--accent);font-size:9px" id="openCount"></span></div>
+      <div class="stitle">
+        Open Positions <span style="color:var(--accent);font-size:9px" id="openCount"></span>
+        <button class="abtn ghost" style="padding:2px 8px;font-size:10px;margin-left:auto" onclick="closeAllPositions()">Close All</button>
+      </div>
       <div class="pos-list" id="posList"><div class="empty">No open positions</div></div>
     </div>
   </div>
@@ -282,6 +286,12 @@ function parseCSVFile(file) {
       document.getElementById('metaBars').textContent = bars.length;
       document.getElementById('metaFrom').textContent = formatDate(bars[0].t);
       document.getElementById('metaTo').textContent = formatDate(bars[bars.length - 1].t);
+
+      // Set date input min/max values
+      const dateInput = document.getElementById('startDateInput');
+      dateInput.min = formatDate(bars[0].t);
+      dateInput.max = formatDate(bars[bars.length - 1].t);
+      dateInput.value = ''; // Clear previous selection
 
       // Topbar pills
       document.getElementById('csvInfo').style.display = 'flex';
@@ -373,6 +383,9 @@ function clearCsv() {
   document.getElementById('dropZone').style.display = 'block';
   document.getElementById('csvInfo').style.display = 'none';
   document.getElementById('csvFileInput').value = '';
+  document.getElementById('startDateInput').value = '';
+  document.getElementById('startDateInput').min = '';
+  document.getElementById('startDateInput').max = '';
   setStatus('ok', 'ลบ CSV แล้ว — เลือกไฟล์ใหม่หรือสลับไป Yahoo Finance');
   refreshAll();
 }
@@ -388,16 +401,45 @@ function bars() { return S.allBars.slice(0, S.visIdx); }
 function lastBar() { return S.allBars[S.visIdx-1] || null; }
 
 function jumpToStartBar() {
-  const v = +document.getElementById('startBarInput').value;
-  if (v < 1 || v > S.allBars.length) { notif('Bar number out of range', 'warn'); return; }
+  let targetBar = null;
+  
+  // Check if date input has a value
+  const dateInput = document.getElementById('startDateInput').value;
+  const barInput = document.getElementById('startBarInput').value;
+  
+  if (dateInput) {
+    // Find the bar closest to the selected date
+    const targetDate = new Date(dateInput + 'T00:00:00Z').getTime();
+    let closestIdx = 0;
+    let minDiff = Math.abs(S.allBars[0].t - targetDate);
+    
+    for (let i = 1; i < S.allBars.length; i++) {
+      const diff = Math.abs(S.allBars[i].t - targetDate);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIdx = i;
+      }
+    }
+    targetBar = closestIdx + 1; // Convert to 1-based index
+    // Update the bar input to show the found bar number
+    document.getElementById('startBarInput').value = targetBar;
+  } else if (barInput) {
+    targetBar = +barInput;
+  }
+  
+  if (!targetBar || targetBar < 1 || targetBar > S.allBars.length) {
+    notif('Bar number out of range', 'warn'); 
+    return; 
+  }
+  
   stopPlay();
-  S.visIdx = v;
+  S.visIdx = targetBar;
   S.orders = []; S.oid = 1;
   S.startBal = +document.getElementById('cCap').value || 10000;
   S.bal = S.startBal;
   S.panOffset = 0;
   refreshAll();
-  notif(`เริ่ม backtest ที่แท่งที่ ${v}`, 'info');
+  notif(`เริ่ม backtest ที่แท่งที่ ${targetBar}${dateInput ? ' (จากวันที่ ' + dateInput + ')' : ''}`, 'info');
 }
 
 function stepNext() { if (S.visIdx >= S.allBars.length) { stopPlay(); return; } S.visIdx++; checkSLTP(); refreshAll(); }
@@ -887,6 +929,28 @@ function closePos(id){
   o.status='closed';o.xp=cur;o.closeTime=lb?.t||Date.now();o.pnl=+pnl.toFixed(2);o.reason='Manual';
   S.bal+=o.qty+pnl;refreshAll();
   notif('Closed @ '+fmtP(cur)+' | P&L: '+(pnl>=0?'+':'')+'$'+pnl.toFixed(2),pnl>=0?'pos':'neg');
+}
+
+function closeAllPositions(){
+  const openOrders=S.orders.filter(o=>o.status==='open');
+  if(!openOrders.length){notif('No open positions to close','info');return;}
+  const lb=lastBar();const cur=lb?lb.c:0;
+  const fee=+document.getElementById('cFee').value/100;
+  let totalPnl=0;
+  let closedCount=0;
+  
+  openOrders.forEach(o=>{
+    const xFee=o.qty*o.lev*fee;
+    const diff=o.side==='long'?cur-o.ep:o.ep-cur;
+    const pnl=(diff/o.ep)*o.qty*o.lev-o.fee-xFee;
+    o.status='closed';o.xp=cur;o.closeTime=lb?.t||Date.now();o.pnl=+pnl.toFixed(2);o.reason='Manual';
+    S.bal+=o.qty+pnl;
+    totalPnl+=pnl;
+    closedCount++;
+  });
+  
+  refreshAll();
+  notif(`Closed ${closedCount} position${closedCount>1?'s':''} @ ${fmtP(cur)} | Total P&L: `+(totalPnl>=0?'+':'')+'$'+totalPnl.toFixed(2),totalPnl>=0?'pos':'neg');
 }
 
 // ── UI ────────────────────────────────────────────────────────────────────
