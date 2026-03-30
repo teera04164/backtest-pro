@@ -87,6 +87,13 @@
   <span class="cur-price-el" id="curPriceEl">—</span>
 </div>
 
+<!-- ── QUICK TRADE BAR ── -->
+<div class="quick-trade-bar">
+  <span class="quick-trade-label">Quick Trade</span>
+  <button class="qt-btn buy-btn" onclick="quickPlaceOrder('long')">📈 BUY/LONG</button>
+  <button class="qt-btn sell-btn" onclick="quickPlaceOrder('short')">📉 SELL/SHORT</button>
+</div>
+
 <!-- STATUS -->
 <div class="status-bar">
   <div class="spinner" id="spinner"></div>
@@ -1019,6 +1026,34 @@ function renderPos(){
 function refreshAll(){draw();updateProgressBar();updateStats();syncBal();renderPos();renderOrders();}
 
 // ── ORDERS ────────────────────────────────────────────────────────────────
+function quickPlaceOrder(side) {
+  if(!S.allBars.length){notif('โหลดข้อมูลก่อนครับ','warn');return;}
+  
+  const qty=+document.getElementById('oQty').value;
+  const lev=+document.getElementById('oLev').value;
+  const slP=+document.getElementById('oSL').value/100;
+  const tpP=+document.getElementById('oTP').value/100;
+  const fee=+document.getElementById('cFee').value/100;
+  
+  if(!qty||qty<=0){notif('กรอก Amount','info');return;}
+  if(qty>S.bal){notif('Balance ไม่พอ','info');return;}
+  
+  const lb=lastBar();
+  if(!lb){notif('ไม่มีข้อมูลราคา','warn');return;}
+  
+  const cur=lb.c;
+  const ep=cur;
+  const sl=slP>0?(side==='long'?ep*(1-slP):ep*(1+slP)):null;
+  const tp=tpP>0?(side==='long'?ep*(1+tpP):ep*(1-tpP)):null;
+  
+  const ord={id:S.oid++,sym:S.sym,side:side,type:'market',qty,lev,ep,sl,tp,fee:qty*lev*fee,status:'open',pnl:0,time:lb.t};
+  S.orders.push(ord);
+  S.bal-=qty;
+  
+  refreshAll();
+  notif((side==='long'?'▲ Quick Long':'▼ Quick Short')+' @ '+fmtP(ep)+' — กด ▶ Play',side==='long'?'pos':'neg');
+}
+
 function placeOrder(){
   if(!S.allBars.length){notif('โหลดข้อมูลก่อนครับ','warn');return;}
   const type=document.getElementById('oType').value;

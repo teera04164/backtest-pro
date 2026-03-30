@@ -84,6 +84,16 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .bar-counter{font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);white-space:nowrap;}
 .cur-price-el{font-family:'Space Mono',monospace;font-size:12px;font-weight:700;color:var(--accent);white-space:nowrap;min-width:90px;text-align:right;}
 
+/* ── QUICK TRADE BAR ── */
+.quick-trade-bar{display:flex;align-items:center;gap:8px;padding:5px 12px;background:#0a0f1a;border-bottom:1px solid var(--border);flex-shrink:0;}
+.quick-trade-label{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
+.qt-btn{background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:6px 12px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px;transition:all .15s;}
+.qt-btn:hover{transform:translateY(-1px);box-shadow:0 2px 8px rgba(0,0,0,0.3);}
+.qt-btn.buy-btn{background:linear-gradient(135deg,var(--green),#059669);border-color:var(--green);color:#fff;}
+.qt-btn.buy-btn:hover{background:linear-gradient(135deg,#059669,var(--green));border-color:#059669;}
+.qt-btn.sell-btn{background:linear-gradient(135deg,var(--red),#dc2626);border-color:var(--red);color:#fff;}
+.qt-btn.sell-btn:hover{background:linear-gradient(135deg,#dc2626,var(--red));border-color:#dc2626;}
+
 /* STATUS */
 .status-bar{display:flex;align-items:center;gap:8px;padding:3px 12px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg3);}
 .spinner{width:10px;height:10px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;display:none;flex-shrink:0;}
