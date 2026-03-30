@@ -214,6 +214,10 @@
           <span style="color:var(--muted)">% of Portfolio:</span>
           <span id="openPnlPct" style="font-weight:600;font-family:'Space Mono',monospace">0.0%</span>
         </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px">
+          <span style="color:var(--muted)">Avg Entry Price:</span>
+          <span id="avgEntryPrice" style="font-weight:600;font-family:'Space Mono',monospace">—</span>
+        </div>
       </div>
       <div class="pos-list" id="posList"><div class="empty">No open positions</div></div>
     </div>
@@ -833,6 +837,42 @@ function drawCandle(W,H,pad,data) {
     }
   });
 
+  // Average entry price line for all open positions
+  const open = S.orders.filter(o => o.status === 'open');
+  if (open.length && lastBar()) {
+    // Calculate weighted average entry price
+    let totalValue = 0;
+    let totalQuantity = 0;
+    
+    open.forEach(o => {
+      totalValue += o.ep * o.qty * o.lev;
+      totalQuantity += o.qty * o.lev;
+    });
+    
+    const avgPrice = totalQuantity > 0 ? totalValue / totalQuantity : 0;
+    
+    if (avgPrice > 0 && avgPrice >= yMn && avgPrice <= yMx) {
+      const avgY = toY(avgPrice);
+      
+      // Draw horizontal line across entire chart
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)'; // Blue color
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 4]);
+      ctx.beginPath();
+      ctx.moveTo(pad.l, avgY);
+      ctx.lineTo(W - pad.r, avgY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      
+      // Draw label on the right side
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
+      ctx.font = '9px Space Mono, monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('AVG ' + fmtP(avgPrice), W - pad.r + 3, avgY + 2);
+    }
+  }
+
   // Current price line
   const lastVisIdx = visData.length - 1;
   const last=visData[lastVisIdx];
@@ -973,44 +1013,64 @@ function renderPos(){
   const open=S.orders.filter(o=>o.status==='open');
   document.getElementById('openCount').textContent=open.length?`(${open.length})`:'';
   
-  // Calculate total unrealized P&L
+  // Calculate total unrealized P&L and average entry price
   let totalUnrealized = 0;
+  let totalValue = 0;
+  let totalQuantity = 0;
+  
   if(open.length && lastBar()){
     const cur = lastBar().c;
     totalUnrealized = open.reduce((sum, o) => {
       const unr = o.side==='long' ? (cur-o.ep)*o.qty*o.lev/o.ep : (o.ep-cur)*o.qty*o.lev/o.ep;
       return sum + unr;
     }, 0);
+    
+    // Calculate weighted average entry price
+    totalValue = open.reduce((sum, o) => sum + o.ep * o.qty * o.lev, 0);
+    totalQuantity = open.reduce((sum, o) => sum + o.qty * o.lev, 0);
   }
   
   // Update P&L display
   const pnlEl = document.getElementById('openPnl');
   const pctEl = document.getElementById('openPnlPct');
+  const avgPriceEl = document.getElementById('avgEntryPrice');
+  
   if(open.length){
-    const totalValue = S.startBal + S.orders.filter(o=>o.status==='closed').reduce((sum,o)=>sum+o.pnl,0);
-    const pct = totalValue > 0 ? (totalUnrealized / totalValue * 100) : 0;
+    const totalPortfolioValue = S.startBal + S.orders.filter(o=>o.status==='closed').reduce((sum,o)=>sum+o.pnl,0);
+    const pct = totalPortfolioValue > 0 ? (totalUnrealized / totalPortfolioValue * 100) : 0;
+    const avgPrice = totalQuantity > 0 ? totalValue / totalQuantity : 0;
+    
     pnlEl.textContent = (totalUnrealized >= 0 ? '+' : '') + '$' + totalUnrealized.toFixed(2);
     pnlEl.style.color = totalUnrealized >= 0 ? 'var(--green)' : 'var(--red)';
     pctEl.textContent = pct.toFixed(1) + '%';
     pctEl.style.color = totalUnrealized >= 0 ? 'var(--green)' : 'var(--red)';
+    avgPriceEl.textContent = fmtP(avgPrice);
+    avgPriceEl.style.color = 'var(--accent)';
   } else {
     pnlEl.textContent = '$0.00';
     pnlEl.style.color = 'var(--muted)';
     pctEl.textContent = '0.0%';
     pctEl.style.color = 'var(--muted)';
+    avgPriceEl.textContent = '—';
+    avgPriceEl.style.color = 'var(--muted)';
   }
   
   if(!open.length){list.innerHTML='<div class="empty">No open positions</div>';return;}
   const lb=lastBar();const cur=lb?lb.c:0;
   list.innerHTML=open.map(o=>{
     const unr=o.side==='long'?(cur-o.ep)*o.qty*o.lev/o.ep:(o.ep-cur)*o.qty*o.lev/o.ep;
+    const positionValue = o.qty * o.lev;
+    const unrPct = positionValue > 0 ? (unr / positionValue * 100) : 0;
     const c=unr>=0?'var(--green)':'var(--red)';
     return`<div class="pcard">
       <div class="pcard-row">
         <div><span class="psl ${o.side}">${o.side.toUpperCase()} ${o.lev}x</span>
           <span class="pdet" style="margin-left:5px">$${o.qty} @ ${fmtP(o.ep)}</span></div>
-        <div style="display:flex;align-items:center">
-          <span class="ppnl" style="color:${c}">${unr>=0?'+':''}$${unr.toFixed(2)}</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="text-align:right">
+            <span class="ppnl" style="color:${c}">${unr>=0?'+':''}$${unr.toFixed(2)}</span>
+            <div class="ppnl-pct" style="color:${c};font-size:9px">${unrPct>=0?'+':''}${unrPct.toFixed(1)}%</div>
+          </div>
           <button class="cbtn" onclick="closePos(${o.id})">Close</button>
         </div>
       </div>
