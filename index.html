@@ -87,7 +87,7 @@
   <span class="cur-price-el" id="curPriceEl">—</span>
 </div>
 
-<!-- ── QUICK TRADE BAR ── -->
+<!-- QUICK TRADE BAR -->
 <div class="quick-trade-bar">
   <span class="quick-trade-label">Quick Trade</span>
   <button class="qt-btn buy-btn" onclick="quickPlaceOrder('long')">📈 BUY/LONG</button>
@@ -95,12 +95,21 @@
   <div style="flex:1"></div>
   <button class="qt-btn session-btn" onclick="showSaveSessionDialog()">💾 Save Session</button>
   <button class="qt-btn session-btn" onclick="showLoadSessionDialog()">📂 Load Session</button>
+  <button class="qt-btn auto-save-btn" onclick="autoSaveSession()" title="Manual Auto-Save">💾 Save Now</button>
 </div>
 
 <!-- STATUS -->
 <div class="status-bar">
   <div class="spinner" id="spinner"></div>
   <span id="statusMsg">กด 📂 Import CSV เพื่อเริ่มต้น</span>
+  <div class="replay-indicator" id="replayIndicator" style="display:none;">
+    <span class="replay-icon">▶</span>
+    <span class="replay-text">Replaying...</span>
+  </div>
+  <div class="auto-save-indicator" id="autoSaveIndicator" style="display:none;">
+    <span class="auto-save-icon">💾</span>
+    <span class="auto-save-text">Auto-saving...</span>
+  </div>
 </div>
 
 <!-- STATS -->
@@ -392,6 +401,178 @@ const S = {
   viewBars: 80,  // number of visible bars in viewport
   mouseX: 0, mouseY: 0, hoveredBar: null
 };
+
+// ── AUTO-SAVE FUNCTIONALITY ──────────────────────────────────────────────
+let autoSaveTimer = null;
+let lastAutoSave = 0;
+
+// Auto-save current session state
+window.autoSaveSession = async function() {
+  if (!S.allBars.length || S.playing) return; // Don't save if no data or during replay
+  
+  try {
+    // Check if we have existing sessions
+    const sessions = await sessionDB.getAllSessions();
+    if (sessions.length === 0) return;
+    
+    // Create or update auto-save session
+    const session = {
+      id: 'autosave-temp', // Fixed ID for auto-save
+      name: 'Auto-Save ' + new Date().toLocaleString(),
+      notes: 'Automatically saved on page reload',
+      savedAt: new Date().toISOString(),
+      data: {
+        sym: S.sym,
+        tf: S.tf,
+        source: S.source,
+        csvMeta: S.csvMeta,
+        allBars: S.allBars,
+        visIdx: S.visIdx,
+        orders: S.orders,
+        oid: S.oid,
+        bal: S.bal,
+        startBal: S.startBal,
+        side: S.side,
+        settings: {
+          capital: document.getElementById('cCap')?.value || 10000,
+          fee: document.getElementById('cFee')?.value || 0.1,
+          leverage: document.getElementById('oLev')?.value || 1,
+          stopLoss: document.getElementById('oSL')?.value || 20000000,
+          takeProfit: document.getElementById('oTP')?.value || 40000000,
+          amount: document.getElementById('oQty')?.value || 10000,
+          startBar: document.getElementById('startBarInput')?.value || 60
+        }
+      }
+    };
+    
+    // Try to update first, then add if it doesn't exist
+    try {
+      await sessionDB.updateSession(session);
+      console.log('Auto-saved session (updated):', session.name);
+    } catch (error) {
+      // If update fails (key doesn't exist), then add it
+      if (error.name === 'ConstraintError') {
+        await sessionDB.addSession(session);
+        console.log('Auto-saved session (new):', session.name);
+      } else {
+        throw error; // Re-throw other errors
+      }
+    }
+    
+    // Update last save time
+    lastAutoSave = Date.now();
+    
+    // Show detailed auto-save indicator
+    showAutoSaveIndicator();
+    
+  } catch (error) {
+    console.error('Auto-save failed:', error);
+  }
+}
+
+// Show auto-save indicator with details
+window.showAutoSaveIndicator = function() {
+  const indicator = document.getElementById('autoSaveIndicator');
+  if (indicator) {
+    indicator.style.display = 'flex';
+    
+    // Update with current timestamp
+    const saveTime = new Date().toLocaleString();
+    indicator.querySelector('.auto-save-text').textContent = `Auto-saved: ${saveTime}`;
+    
+    // Hide after 3 seconds
+    setTimeout(() => {
+      indicator.style.display = 'none';
+    }, 3000);
+  }
+}
+
+// Restore auto-saved session on page load
+window.restoreAutoSave = async function() {
+  try {
+    const session = await sessionDB.getSession('autosave-temp');
+    
+    if (session) {
+      console.log('Restoring auto-saved session:', session.name);
+      
+      // Restore session data
+      const data = session.data;
+      S.sym = data.sym;
+      S.tf = data.tf;
+      S.source = data.source;
+      S.csvMeta = data.csvMeta;
+      S.allBars = data.allBars;
+      S.visIdx = data.visIdx;
+      S.orders = data.orders;
+      S.oid = data.oid;
+      S.bal = data.bal;
+      S.startBal = data.startBal;
+      S.side = data.side;
+      
+      // Restore form settings
+      if (data.settings) {
+        document.getElementById('cCap').value = data.settings.capital;
+        document.getElementById('cFee').value = data.settings.fee;
+        document.getElementById('oLev').value = data.settings.leverage;
+        document.getElementById('oSL').value = data.settings.stopLoss;
+        document.getElementById('oTP').value = data.settings.takeProfit;
+        document.getElementById('oQty').value = data.settings.amount;
+        document.getElementById('startBarInput').value = data.settings.startBar;
+      }
+      
+      // Update UI
+      if (S.source === 'csv' && S.csvMeta) {
+        document.getElementById('csvPanel').classList.add('show');
+        document.getElementById('csvLoadedInfo').style.display = 'flex';
+        document.getElementById('dropZone').style.display = 'none';
+        document.getElementById('metaSym').textContent = S.csvMeta.sym;
+        document.getElementById('metaTf').textContent = S.csvMeta.tf;
+        document.getElementById('metaBars').textContent = S.allBars.length;
+        document.getElementById('metaFrom').textContent = formatDate(S.allBars[0].t);
+        document.getElementById('metaTo').textContent = formatDate(S.allBars[S.allBars.length - 1].t);
+        
+        // Set date input min/max values
+        const dateInput = document.getElementById('startDateInput');
+        dateInput.min = formatDate(S.allBars[0].t);
+        dateInput.max = formatDate(S.allBars[S.allBars.length - 1].t);
+        
+        // Topbar pills
+        document.getElementById('csvInfo').style.display = 'flex';
+        document.getElementById('csvSymPill').style.display = 'inline-block';
+        document.getElementById('csvSymPill').textContent = S.csvMeta.sym;
+        document.getElementById('csvTfPill').textContent = S.csvMeta.tf;
+        document.getElementById('csvRowsPill').textContent = S.allBars.length + ' bars';
+      }
+      
+      refreshAll();
+      notif(`Restored auto-saved session: ${session.name}`, 'pos');
+      showAutoSaveIndicator();
+    }
+  } catch (error) {
+    console.error('Failed to restore auto-save:', error);
+  }
+}
+
+// Auto-save every 30 seconds
+window.startAutoSave = function() {
+  if (autoSaveTimer) clearInterval(autoSaveTimer);
+  
+  autoSaveTimer = setInterval(() => {
+    autoSaveSession();
+  }, 30000); // 30 seconds
+}
+
+window.stopAutoSave = function() {
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+}
+
+// Save state before page unload
+window.addEventListener('beforeunload', function() {
+  autoSaveSession();
+});
 
 // ── INITIALIZATION ───────────────────────────────────────────────────────────
 function loadDefaultData() {
@@ -691,12 +872,20 @@ function startPlay() {
   S.playing = true;
   document.getElementById('playBtn').textContent = '⏸';
   document.getElementById('playBtn').classList.add('playing');
+  
+  // Show replay indicator
+  document.getElementById('replayIndicator').style.display = 'flex';
+  
   tick();
 }
 function stopPlay() {
-  S.playing = false; clearTimeout(S.playTimer);
+  S.playing = false;
+  clearTimeout(S.playTimer);
   document.getElementById('playBtn').textContent = '▶';
   document.getElementById('playBtn').classList.remove('playing');
+  
+  // Hide replay indicator
+  document.getElementById('replayIndicator').style.display = 'none';
 }
 function tick() {
   if (!S.playing) return;
@@ -1434,7 +1623,19 @@ async function initializeApp() {
 }
 
 // Start the application
-initializeApp();
+initializeApp().then(() => {
+  // Start auto-save after initialization
+  startAutoSave();
+  
+  // Try to restore auto-saved session
+  restoreAutoSave();
+}).catch(error => {
+  console.error('Failed to initialize app:', error);
+  notif('Failed to initialize application', 'warn');
+  // Fallback to localStorage if IndexedDB fails
+  loadDefaultData();
+  resize();
+});
 </script>
 </body>
 </html>
