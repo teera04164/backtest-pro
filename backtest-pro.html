@@ -95,7 +95,7 @@
 
 <!-- STATS -->
 <div class="stats-bar">
-  <div class="stat"><div class="slbl">Net P&L</div><div class="sval w" id="s_pnl">$0.00</div></div>
+  <div class="stat"><div class="slbl">Net P&L</div><div class="sval w" id="s_pnl">$0.00 (0.0%)</div></div>
   <div class="stat"><div class="slbl">Win Rate</div><div class="sval w" id="s_wr">0%</div></div>
   <div class="stat"><div class="slbl">Trades</div><div class="sval w" id="s_tr">0</div></div>
   <div class="stat"><div class="slbl">Avg Win</div><div class="sval g" id="s_aw">$0.00</div></div>
@@ -158,7 +158,7 @@
         <div class="frow">
           <div class="flbl">Amount (USD)</div>
           <div style="display:flex;gap:3px;align-items:center">
-            <input type="number" id="oQty" value="200" min="1" style="flex:1">
+            <input type="number" id="oQty" value="10000" min="1" style="flex:1">
             <button class="abtn ghost" style="padding:3px 6px;font-size:9px;white-space:nowrap" onclick="document.getElementById('oQty').value=Math.round(+document.getElementById('oQty').value/2)">÷2</button>
             <button class="abtn" style="padding:3px 6px;font-size:9px;white-space:nowrap" onclick="document.getElementById('oQty').value=+document.getElementById('oQty').value*2">×2</button>
           </div>
@@ -171,8 +171,8 @@
         </div>
       </div>
       <div class="fg2">
-        <div class="frow"><div class="flbl">Stop Loss %</div><input type="number" id="oSL" value="2" min="0" step="0.1"></div>
-        <div class="frow"><div class="flbl">Take Profit %</div><input type="number" id="oTP" value="4" min="0" step="0.1"></div>
+        <div class="frow"><div class="flbl">Stop Loss %</div><input type="number" id="oSL" value="2000000" min="0" step="0.1"></div>
+        <div class="frow"><div class="flbl">Take Profit %</div><input type="number" id="oTP" value="2000000" min="0" step="0.1"></div>
       </div>
       <button class="subbtn long" id="subBtn" onclick="placeOrder()">▲ Buy / Long</button>
     </div>
@@ -180,7 +180,7 @@
     <div class="psec">
       <div class="stitle">Settings</div>
       <div class="fg2">
-        <div class="frow"><div class="flbl">Capital ($)</div><input type="number" id="cCap" value="10000" min="100"></div>
+        <div class="frow"><div class="flbl">Capital ($)</div><input type="number" id="cCap" value="100000" min="100"></div>
         <div class="frow"><div class="flbl">Fee %</div><input type="number" id="cFee" value="0.1" step="0.01"></div>
       </div>
       <div class="frow" style="margin-top:5px">
@@ -197,6 +197,16 @@
       <div class="stitle">
         Open Positions <span style="color:var(--accent);font-size:9px" id="openCount"></span>
         <button class="abtn ghost" style="padding:2px 8px;font-size:10px;margin-left:auto" onclick="closeAllPositions()">Close All</button>
+      </div>
+      <div style="padding:8px 12px;background:rgba(255,255,255,0.02);border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px;">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="color:var(--muted)">Current P&L:</span>
+          <span id="openPnl" style="font-weight:600;font-family:'Space Mono',monospace">$0.00</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px">
+          <span style="color:var(--muted)">% of Portfolio:</span>
+          <span id="openPnlPct" style="font-weight:600;font-family:'Space Mono',monospace">0.0%</span>
+        </div>
       </div>
       <div class="pos-list" id="posList"><div class="empty">No open positions</div></div>
     </div>
@@ -272,7 +282,7 @@ function parseCSVFile(file) {
       S.tf = meta.tf;
       S.visIdx = Math.min(60, bars.length);
       S.orders = []; S.oid = 1;
-      S.startBal = +document.getElementById('cCap').value || 10000;
+      S.startBal = +document.getElementById('cCap').value || 100000;
       S.bal = S.startBal;
 
       // Update UI
@@ -435,7 +445,7 @@ function jumpToStartBar() {
   stopPlay();
   S.visIdx = targetBar;
   S.orders = []; S.oid = 1;
-  S.startBal = +document.getElementById('cCap').value || 10000;
+  S.startBal = +document.getElementById('cCap').value || 100000;
   S.bal = S.startBal;
   S.panOffset = 0;
   refreshAll();
@@ -824,8 +834,12 @@ function updateStats() {
   const pf=gl>0?(gw/gl).toFixed(2):(gw>0?'∞':'—');
   let sh='—';
   if(cl.length>1){const ps=cl.map(o=>o.pnl),m=ps.reduce((a,b)=>a+b,0)/ps.length,sd=Math.sqrt(ps.reduce((s,v)=>s+(v-m)**2,0)/ps.length);sh=sd>0?(m/sd*Math.sqrt(252)).toFixed(2):'—';}
+  
+  // Calculate P&L percentage
+  const pnlPct = S.startBal > 0 ? (pnl / S.startBal * 100) : 0;
+  
   const set=(id,v,c)=>{const e=document.getElementById(id);e.textContent=v;e.className='sval '+c;};
-  set('s_pnl',(pnl>=0?'+':'')+'$'+Math.abs(pnl).toFixed(2),pnl>=0?'g':'r');
+  set('s_pnl',(pnl>=0?'+':'')+'$'+Math.abs(pnl).toFixed(2)+' ('+(pnlPct>=0?'+':'')+pnlPct.toFixed(1)+'%)',pnl>=0?'g':'r');
   set('s_wr',wr+'%','w');set('s_tr',cl.length,'w');
   set('s_aw','$'+aw,'g');set('s_al','-$'+al,'r');
   set('s_dd',mdd.toFixed(1)+'%','r');set('s_pf',pf,'w');set('s_sh',sh,'w');
@@ -872,6 +886,34 @@ function renderPos(){
   const list=document.getElementById('posList');
   const open=S.orders.filter(o=>o.status==='open');
   document.getElementById('openCount').textContent=open.length?`(${open.length})`:'';
+  
+  // Calculate total unrealized P&L
+  let totalUnrealized = 0;
+  if(open.length && lastBar()){
+    const cur = lastBar().c;
+    totalUnrealized = open.reduce((sum, o) => {
+      const unr = o.side==='long' ? (cur-o.ep)*o.qty*o.lev/o.ep : (o.ep-cur)*o.qty*o.lev/o.ep;
+      return sum + unr;
+    }, 0);
+  }
+  
+  // Update P&L display
+  const pnlEl = document.getElementById('openPnl');
+  const pctEl = document.getElementById('openPnlPct');
+  if(open.length){
+    const totalValue = S.startBal + S.orders.filter(o=>o.status==='closed').reduce((sum,o)=>sum+o.pnl,0);
+    const pct = totalValue > 0 ? (totalUnrealized / totalValue * 100) : 0;
+    pnlEl.textContent = (totalUnrealized >= 0 ? '+' : '') + '$' + totalUnrealized.toFixed(2);
+    pnlEl.style.color = totalUnrealized >= 0 ? 'var(--green)' : 'var(--red)';
+    pctEl.textContent = pct.toFixed(1) + '%';
+    pctEl.style.color = totalUnrealized >= 0 ? 'var(--green)' : 'var(--red)';
+  } else {
+    pnlEl.textContent = '$0.00';
+    pnlEl.style.color = 'var(--muted)';
+    pctEl.textContent = '0.0%';
+    pctEl.style.color = 'var(--muted)';
+  }
+  
   if(!open.length){list.innerHTML='<div class="empty">No open positions</div>';return;}
   const lb=lastBar();const cur=lb?lb.c:0;
   list.innerHTML=open.map(o=>{
@@ -967,7 +1009,7 @@ function clearClosed(){S.orders=S.orders.filter(o=>o.status==='open');renderOrde
 function resetSession(){
   stopPlay();S.orders=[];S.oid=1;
   S.visIdx=Math.min(60,S.allBars.length);
-  S.startBal=+document.getElementById('cCap').value||10000;
+  S.startBal=+document.getElementById('cCap').value||100000;
   S.bal=S.startBal;refreshAll();
 }
 function setStatus(type,msg){
