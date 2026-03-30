@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BackTest Pro</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap');
+:root{
+  --bg:#0a0e1a;--bg2:#111827;--bg3:#1a2235;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.14);
+  --text:#e2e8f0;--muted:#64748b;
+  --accent:#3b82f6;--accent2:#6366f1;
+  --green:#10b981;--red:#ef4444;--yellow:#f59e0b;--purple:#8b5cf6;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-size:13px;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+
+/* ── TOPBAR ── */
+.topbar{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap;}
+.logo{font-family:'Space Mono',monospace;font-size:14px;font-weight:700;background:linear-gradient(135deg,#3b82f6,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;white-space:nowrap;}
+
+.src-tabs{display:flex;gap:2px;background:var(--bg);padding:2px;border-radius:6px;}
+.src-tab{padding:4px 12px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600;color:var(--muted);transition:all .15s;border:none;background:transparent;}
+.src-tab:hover{color:var(--text);}
+.src-tab.active{background:var(--bg2);color:var(--text);}
+.src-tab.csv-tab.active{color:var(--purple);}
+.src-tab.yf-tab.active{color:var(--accent);}
+
+/* CSV info pill */
+.csv-info{display:flex;align-items:center;gap:6px;}
+.csv-pill{background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.3);color:#c4b5fd;padding:3px 9px;border-radius:4px;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;display:none;}
+.tf-pill{background:rgba(59,130,246,.12);border:1px solid rgba(59,130,246,.3);color:#93c5fd;padding:3px 7px;border-radius:4px;font-family:'Space Mono',monospace;font-size:10px;}
+
+/* quick syms */
+.q-group{display:flex;gap:3px;flex-wrap:wrap;}
+.q-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;align-self:center;white-space:nowrap;}
+.sym-btn{background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:3px 8px;border-radius:4px;cursor:pointer;font-family:'Space Mono',monospace;font-size:10px;transition:all .15s;}
+.sym-btn:hover{border-color:var(--accent);color:var(--accent);}
+.sym-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.sym-btn.stock.active{background:var(--yellow);border-color:var(--yellow);color:#000;}
+.sym-btn.crypto.active{background:var(--green);border-color:var(--green);color:#fff;}
+
+.search-wrap{display:flex;gap:3px;align-items:center;}
+#symInput{background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:4px 8px;border-radius:4px;font-family:'Space Mono',monospace;font-size:11px;width:120px;outline:none;text-transform:uppercase;}
+#symInput::placeholder{text-transform:none;color:var(--muted);}
+#symInput:focus{border-color:var(--accent);}
+
+.tf-btn{background:transparent;border:1px solid var(--border);color:var(--muted);padding:3px 7px;border-radius:4px;cursor:pointer;font-size:10px;transition:all .15s;}
+.tf-btn:hover{color:var(--text);}
+.tf-btn.active{color:var(--accent);border-color:var(--accent);}
+
+.spacer{flex:1;}
+.bal{font-family:'Space Mono',monospace;font-size:11px;white-space:nowrap;}
+.bal span{color:var(--muted);font-size:10px;}
+#balVal{font-weight:700;color:var(--green);}
+.abtn{border:none;padding:5px 11px;border-radius:5px;cursor:pointer;font-weight:600;font-size:11px;transition:all .2s;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;}
+.abtn:hover{opacity:.85;}
+.abtn.ghost{background:transparent;border:1px solid var(--border2);color:var(--muted);}
+.abtn.ghost:hover{color:var(--text);}
+
+/* ── CSV IMPORT PANEL (shown when csv tab active) ── */
+.csv-panel{display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;}
+.csv-panel.show{display:flex;}
+.drop-zone{width:100%;max-width:600px;border:2px dashed rgba(139,92,246,.4);border-radius:10px;padding:28px;text-align:center;cursor:pointer;transition:all .2s;position:relative;background:rgba(139,92,246,.04);}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--purple);background:rgba(139,92,246,.08);}
+.drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.drop-icon{font-size:28px;margin-bottom:8px;}
+.drop-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px;}
+.drop-sub{font-size:11px;color:var(--muted);}
+.drop-sub span{color:var(--purple);}
+.csv-loaded-info{background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.25);border-radius:8px;padding:12px 20px;display:flex;gap:20px;align-items:center;flex-wrap:wrap;}
+.csv-meta{display:flex;flex-direction:column;gap:2px;}
+.csv-meta-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+.csv-meta-val{font-family:'Space Mono',monospace;font-size:13px;font-weight:700;color:#c4b5fd;}
+.csv-close-btn{background:none;border:1px solid var(--border2);color:var(--muted);padding:4px 10px;border-radius:5px;cursor:pointer;font-size:11px;margin-left:auto;}
+.csv-close-btn:hover{color:var(--red);border-color:var(--red);}
+
+/* ── REPLAY BAR ── */
+.replay-bar{display:flex;align-items:center;gap:8px;padding:5px 12px;background:#0d1424;border-bottom:1px solid var(--border);flex-shrink:0;}
+.replay-label{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
+.rc-btn{background:var(--bg3);border:1px solid var(--border2);color:var(--text);width:30px;height:27px;border-radius:5px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all .15s;}
+.rc-btn:hover{border-color:var(--accent);color:var(--accent);}
+.rc-btn.play-btn{width:36px;background:var(--accent);border-color:var(--accent);color:#fff;}
+.rc-btn.play-btn.playing{background:var(--yellow);border-color:var(--yellow);color:#000;}
+.speed-sel{background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:3px 6px;border-radius:4px;font-size:10px;outline:none;font-family:'Space Mono',monospace;}
+.progress-wrap{flex:1;display:flex;align-items:center;gap:8px;}
+.progress-track{flex:1;height:4px;background:var(--border2);border-radius:2px;cursor:pointer;position:relative;}
+.progress-fill{height:100%;background:var(--accent);border-radius:2px;}
+.progress-thumb{position:absolute;top:50%;width:10px;height:10px;background:#fff;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 4px rgba(59,130,246,.6);}
+.bar-counter{font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);white-space:nowrap;}
+.cur-price-el{font-family:'Space Mono',monospace;font-size:12px;font-weight:700;color:var(--accent);white-space:nowrap;min-width:90px;text-align:right;}
+
+/* STATUS */
+.status-bar{display:flex;align-items:center;gap:8px;padding:3px 12px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg3);}
+.spinner{width:10px;height:10px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;display:none;flex-shrink:0;}
+@keyframes spin{to{transform:rotate(360deg);}}
+#statusMsg{font-size:10px;color:var(--muted);}
+
+/* STATS */
+.stats-bar{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto;}
+.stat{padding:5px 11px;border-right:1px solid var(--border);white-space:nowrap;flex-shrink:0;}
+.slbl{color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.4px;}
+.sval{font-family:'Space Mono',monospace;font-size:11px;font-weight:700;margin-top:1px;}
+.g{color:var(--green);}.r{color:var(--red);}.w{color:var(--text);}
+
+/* MAIN */
+.main{display:grid;grid-template-columns:1fr 265px;flex:1;overflow:hidden;}
+.center{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--border);}
+.ctabs{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;}
+.ctab{padding:6px 12px;cursor:pointer;font-size:11px;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;}
+.ctab:hover{color:var(--text);}
+.ctab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.chart-wrap{flex:1;position:relative;overflow:hidden;}
+#cv{display:block;}
+
+/* ORDERS */
+.ord-panel{height:175px;border-top:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;flex-shrink:0;}
+.phdr{display:flex;align-items:center;padding:5px 11px;border-bottom:1px solid var(--border);gap:6px;}
+.ptitle{font-size:9px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+.badge{background:var(--bg3);border-radius:20px;padding:1px 6px;font-size:9px;color:var(--accent);}
+.tbl-wrap{flex:1;overflow-y:auto;}
+table{width:100%;border-collapse:collapse;}
+th{position:sticky;top:0;background:var(--bg2);color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.3px;font-weight:500;padding:4px 8px;text-align:left;border-bottom:1px solid var(--border);}
+td{padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.025);font-size:11px;}
+tr:hover td{background:rgba(255,255,255,0.02);}
+.tag{display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;font-family:'Space Mono',monospace;}
+.tag-long{background:rgba(16,185,129,.15);color:var(--green);}
+.tag-short{background:rgba(239,68,68,.15);color:var(--red);}
+.tag-open{background:rgba(59,130,246,.15);color:var(--accent);}
+.tag-closed{background:rgba(100,116,139,.1);color:var(--muted);}
+.tag-sl{background:rgba(239,68,68,.2);color:#f87171;}
+.tag-tp{background:rgba(16,185,129,.2);color:#34d399;}
+.tag-manual{background:rgba(100,116,139,.15);color:var(--muted);}
+
+/* RIGHT */
+.right{display:flex;flex-direction:column;overflow:hidden;background:var(--bg2);}
+.psec{border-bottom:1px solid var(--border);padding:10px;}
+.stitle{font-size:9px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:600;margin-bottom:7px;display:flex;align-items:center;gap:4px;}
+.stitle::before{content:'';width:2px;height:10px;border-radius:2px;background:var(--accent);}
+.side-tgl{display:grid;grid-template-columns:1fr 1fr;gap:3px;background:var(--bg);border-radius:5px;padding:2px;margin-bottom:7px;}
+.sbtn{border:none;border-radius:4px;padding:5px;cursor:pointer;font-size:11px;font-weight:600;transition:all .2s;background:transparent;color:var(--muted);}
+.sbtn.long.active{background:var(--green);color:#fff;}
+.sbtn.short.active{background:var(--red);color:#fff;}
+.frow{display:flex;flex-direction:column;gap:2px;margin-bottom:5px;}
+.flbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;}
+.fg2{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+input[type=number],select{background:var(--bg);border:1px solid var(--border2);color:var(--text);padding:5px 7px;border-radius:4px;font-size:11px;font-family:'Space Mono',monospace;width:100%;outline:none;transition:border-color .2s;}
+input[type=number]:focus,select:focus{border-color:var(--accent);}
+select option{background:var(--bg2);}
+.subbtn{border:none;border-radius:5px;padding:8px;cursor:pointer;font-size:12px;font-weight:700;width:100%;transition:all .2s;margin-top:3px;}
+.subbtn.long{background:var(--green);color:#fff;}
+.subbtn.short{background:var(--red);color:#fff;}
+.subbtn:hover{opacity:.85;}
+.pos-list{display:flex;flex-direction:column;gap:4px;overflow-y:auto;flex:1;}
+.pcard{background:var(--bg3);border-radius:5px;padding:6px 8px;border:1px solid var(--border);}
+.pcard-row{display:flex;justify-content:space-between;align-items:center;}
+.psl{font-size:9px;font-weight:700;}
+.psl.long{color:var(--green);}
+.psl.short{color:var(--red);}
+.pdet{font-size:9px;color:var(--muted);font-family:'Space Mono',monospace;}
+.ppnl{font-family:'Space Mono',monospace;font-size:11px;font-weight:700;}
+.cbtn{background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.2);border-radius:4px;padding:2px 6px;cursor:pointer;font-size:9px;margin-left:5px;transition:all .2s;}
+.cbtn:hover{background:var(--red);color:#fff;}
+.empty{text-align:center;color:var(--muted);font-size:11px;padding:12px 0;}
+
+/* NOTIF */
+.notif{position:fixed;bottom:14px;right:14px;padding:9px 14px;border-radius:7px;font-size:12px;font-weight:500;opacity:0;transform:translateY(8px);transition:all .3s;pointer-events:none;z-index:999;border:1px solid;max-width:360px;}
+.notif.show{opacity:1;transform:translateY(0);}
+.notif.pos{background:rgba(16,185,129,.12);color:var(--green);border-color:rgba(16,185,129,.3);}
+.notif.neg{background:rgba(239,68,68,.12);color:var(--red);border-color:rgba(239,68,68,.3);}
+.notif.info{background:rgba(59,130,246,.12);color:var(--accent);border-color:rgba(59,130,246,.3);}
+.notif.warn{background:rgba(245,158,11,.12);color:var(--yellow);border-color:rgba(245,158,11,.3);}
+.notif.csv{background:rgba(139,92,246,.12);color:#c4b5fd;border-color:rgba(139,92,246,.3);}
+
+::-webkit-scrollbar{width:3px;height:3px;}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+</style>
+</head>
+<body>
+
+<!-- ── TOP BAR ── -->
+<div class="topbar">
+  <div class="logo">▲ BackTest Pro</div>
+
+  <!-- CSV info pills (shown when CSV loaded) -->
+  <div class="csv-info" id="csvInfo" style="display:none">
+    <span class="csv-pill" id="csvSymPill">—</span>
+    <span class="tf-pill" id="csvTfPill">—</span>
+    <span style="font-size:10px;color:var(--muted)" id="csvRowsPill"></span>
+  </div>
+
+  <button class="abtn" style="padding:4px 12px;font-size:11px" onclick="document.getElementById('csvPanel').classList.toggle('show')">📂 Import CSV</button>
+
+  <div class="spacer"></div>
+  <div class="bal"><span>Balance: </span><span id="balVal">$10,000.00</span></div>
+  <button class="abtn ghost" onclick="resetSession()">↺ Reset</button>
+</div>
+
+<!-- ── CSV IMPORT PANEL ── -->
+<div class="csv-panel" id="csvPanel">
+  <!-- Drop Zone -->
+  <div class="drop-zone" id="dropZone">
+    <input type="file" accept=".csv" id="csvFileInput" onchange="handleFileSelect(event)">
+    <div class="drop-icon">📊</div>
+    <div class="drop-title">ลาก CSV จาก TradingView มาวางที่นี่</div>
+    <div class="drop-sub">หรือ <span>คลิกเพื่อเลือกไฟล์</span> — รองรับ format: <code style="color:var(--accent)">time,open,high,low,close</code></div>
+    <div class="drop-sub" style="margin-top:4px">ชื่อไฟล์ เช่น <code style="color:var(--purple)">PEPPERSTONE_XAUUSD__1W.csv</code> → ระบบจะดึง Symbol และ TF ให้อัตโนมัติ</div>
+  </div>
+
+  <!-- Loaded Info -->
+  <div class="csv-loaded-info" id="csvLoadedInfo" style="display:none">
+    <div class="csv-meta">
+      <div class="csv-meta-label">Symbol</div>
+      <div class="csv-meta-val" id="metaSym">—</div>
+    </div>
+    <div class="csv-meta">
+      <div class="csv-meta-label">Timeframe</div>
+      <div class="csv-meta-val" id="metaTf">—</div>
+    </div>
+    <div class="csv-meta">
+      <div class="csv-meta-label">Bars</div>
+      <div class="csv-meta-val" id="metaBars">—</div>
+    </div>
+    <div class="csv-meta">
+      <div class="csv-meta-label">From</div>
+      <div class="csv-meta-val" id="metaFrom">—</div>
+    </div>
+    <div class="csv-meta">
+      <div class="csv-meta-label">To</div>
+      <div class="csv-meta-val" id="metaTo">—</div>
+    </div>
+    <button class="csv-close-btn" onclick="clearCsv()">✕ Remove</button>
+  </div>
+</div>
+
+<!-- ── REPLAY BAR ── -->
+<div class="replay-bar">
+  <span class="replay-label">Replay</span>
+  <button class="rc-btn" onclick="stepBack()">⏮</button>
+  <button class="rc-btn play-btn" id="playBtn" onclick="togglePlay()">▶</button>
+  <button class="rc-btn" onclick="stepNext()">⏭</button>
+  <button class="rc-btn" onclick="goToEnd()">⏩</button>
+  <select class="speed-sel" id="speedSel" onchange="S.speed=+this.value">
+    <option value="800">0.5x</option>
+    <option value="400" selected>1x</option>
+    <option value="200">2x</option>
+    <option value="80">5x</option>
+    <option value="30">10x</option>
+  </select>
+  <div class="progress-wrap">
+    <div class="progress-track" id="pTrack" onclick="seekBar(event)">
+      <div class="progress-fill" id="pFill" style="width:0%"></div>
+      <div class="progress-thumb" id="pThumb" style="left:0%"></div>
+    </div>
+  </div>
+  <span class="bar-counter" id="barCnt">0 / 0</span>
+  <span class="cur-price-el" id="curPriceEl">—</span>
+</div>
+
+<!-- STATUS -->
+<div class="status-bar">
+  <div class="spinner" id="spinner"></div>
+  <span id="statusMsg">กด 📂 Import CSV เพื่อเริ่มต้น</span>
+</div>
+
+<!-- STATS -->
+<div class="stats-bar">
+  <div class="stat"><div class="slbl">Net P&L</div><div class="sval w" id="s_pnl">$0.00</div></div>
+  <div class="stat"><div class="slbl">Win Rate</div><div class="sval w" id="s_wr">0%</div></div>
+  <div class="stat"><div class="slbl">Trades</div><div class="sval w" id="s_tr">0</div></div>
+  <div class="stat"><div class="slbl">Avg Win</div><div class="sval g" id="s_aw">$0.00</div></div>
+  <div class="stat"><div class="slbl">Avg Loss</div><div class="sval r" id="s_al">$0.00</div></div>
+  <div class="stat"><div class="slbl">Max DD</div><div class="sval r" id="s_dd">0%</div></div>
+  <div class="stat"><div class="slbl">Profit Factor</div><div class="sval w" id="s_pf">—</div></div>
+  <div class="stat"><div class="slbl">Sharpe</div><div class="sval w" id="s_sh">—</div></div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="center">
+    <div class="ctabs">
+      <div class="ctab active" onclick="setTab(this,'candle')">Candlestick</div>
+      <div class="ctab" onclick="setTab(this,'pnl')">P&L per Trade</div>
+      <div class="ctab" onclick="setTab(this,'equity')">Equity Curve</div>
+      <div class="ctab" onclick="setTab(this,'dd')">Drawdown</div>
+    </div>
+    <div class="chart-wrap" id="chartWrap"><canvas id="cv"></canvas></div>
+    <div class="ord-panel">
+      <div class="phdr">
+        <span class="ptitle">Order History</span>
+        <span class="badge" id="ordCnt">0</span>
+        <div style="flex:1"></div>
+        <button class="abtn ghost" style="padding:2px 8px;font-size:10px" onclick="clearClosed()">Clear Closed</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Side</th><th>Type</th><th>Qty</th>
+            <th>Entry</th><th>Exit</th><th>P&L</th><th>Reason</th><th>Status</th>
+          </tr></thead>
+          <tbody id="ordBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="right">
+    <div class="psec">
+      <div class="stitle">Place Order</div>
+      <div class="side-tgl">
+        <button class="sbtn long active" id="bL" onclick="setSide('long')">▲ Long</button>
+        <button class="sbtn short" id="bS" onclick="setSide('short')">▼ Short</button>
+      </div>
+      <div class="frow">
+        <div class="flbl">Order Type</div>
+        <select id="oType" onchange="togglePRow()">
+          <option value="market">Market</option>
+          <option value="limit">Limit</option>
+          <option value="stop">Stop Market</option>
+        </select>
+      </div>
+      <div class="frow" id="pRow" style="display:none">
+        <div class="flbl">Price</div>
+        <input type="number" id="oPrice" placeholder="0.00" step="0.01">
+      </div>
+      <div class="fg2">
+        <div class="frow"><div class="flbl">Amount (USD)</div><input type="number" id="oQty" value="200" min="1"></div>
+        <div class="frow"><div class="flbl">Leverage</div>
+          <select id="oLev">
+            <option value="1" selected>1x</option><option value="2">2x</option>
+            <option value="5">5x</option><option value="10">10x</option><option value="20">20x</option>
+          </select>
+        </div>
+      </div>
+      <div class="fg2">
+        <div class="frow"><div class="flbl">Stop Loss %</div><input type="number" id="oSL" value="2" min="0" step="0.1"></div>
+        <div class="frow"><div class="flbl">Take Profit %</div><input type="number" id="oTP" value="4" min="0" step="0.1"></div>
+      </div>
+      <button class="subbtn long" id="subBtn" onclick="placeOrder()">▲ Buy / Long</button>
+    </div>
+
+    <div class="psec">
+      <div class="stitle">Settings</div>
+      <div class="fg2">
+        <div class="frow"><div class="flbl">Capital ($)</div><input type="number" id="cCap" value="10000" min="100"></div>
+        <div class="frow"><div class="flbl">Fee %</div><input type="number" id="cFee" value="0.1" step="0.01"></div>
+      </div>
+    </div>
+  </div>
+
+    <div class="psec" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+      <div class="stitle">Open Positions <span style="color:var(--accent);font-size:9px" id="openCount"></span></div>
+      <div class="pos-list" id="posList"><div class="empty">No open positions</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="notif" id="notif"></div>
+
+<script>
+// ── STATE ─────────────────────────────────────────────────────────────────
+const S = {
+  source: 'csv',
+  sym: '', tf: '',
+  side: 'long', bal: 10000, startBal: 10000,
+  allBars: [], visIdx: 0,
+  orders: [], oid: 1, tab: 'candle',
+  playing: false, playTimer: null, speed: 400,
+  csvMeta: null
+};
+
+// ── CANVAS ────────────────────────────────────────────────────────────────
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+function resize() {
+  const r = document.getElementById('chartWrap').getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = r.width * dpr; cv.height = r.height * dpr;
+  cv.style.width = r.width + 'px'; cv.style.height = r.height + 'px';
+  ctx.scale(dpr, dpr); draw();
+}
+window.addEventListener('resize', resize);
+
+// ── SOURCE SWITCH ─────────────────────────────────────────────────────────
+function switchSource(src) {
+  S.source = 'csv';
+  document.getElementById('csvPanel').classList.add('show');
+  if (S.csvMeta) document.getElementById('csvInfo').style.display = 'flex';
+}
+
+// ── CSV IMPORT ────────────────────────────────────────────────────────────
+// Drag-and-drop
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) parseCSVFile(file);
+});
+
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) parseCSVFile(file);
+}
+
+function parseCSVFile(file) {
+  setStatus('loading', `กำลังอ่านไฟล์ ${file.name}...`);
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const text = ev.target.result;
+      const meta = parseFilename(file.name);
+      const bars = parseCSVText(text);
+      if (!bars.length) throw new Error('ไม่พบข้อมูลในไฟล์');
+
+      S.allBars = bars;
+      S.csvMeta = { ...meta, filename: file.name };
+      S.source = 'csv';
+      S.sym = meta.sym;
+      S.tf = meta.tf;
+      S.visIdx = Math.min(60, bars.length);
+      S.orders = []; S.oid = 1;
+      S.startBal = +document.getElementById('cCap').value || 10000;
+      S.bal = S.startBal;
+
+      // Update UI
+      document.getElementById('csvPanel').classList.add('show');
+
+      // Show loaded info
+      document.getElementById('csvLoadedInfo').style.display = 'flex';
+      document.getElementById('dropZone').style.display = 'none';
+      document.getElementById('metaSym').textContent = meta.sym;
+      document.getElementById('metaTf').textContent = meta.tf;
+      document.getElementById('metaBars').textContent = bars.length;
+      document.getElementById('metaFrom').textContent = formatDate(bars[0].t);
+      document.getElementById('metaTo').textContent = formatDate(bars[bars.length - 1].t);
+
+      // Topbar pills
+      document.getElementById('csvInfo').style.display = 'flex';
+      document.getElementById('csvSymPill').style.display = 'inline-block';
+      document.getElementById('csvSymPill').textContent = meta.sym;
+      document.getElementById('csvTfPill').textContent = meta.tf;
+      document.getElementById('csvRowsPill').textContent = bars.length + ' bars';
+
+      setStatus('ok', `✓ โหลด CSV สำเร็จ: ${meta.sym} ${meta.tf} | ${bars.length} แท่งเทียน | UTC`);
+      notif(`📂 โหลด ${meta.sym} ${meta.tf} สำเร็จ — ${bars.length} แท่ง`, 'csv');
+      refreshAll();
+    } catch (e) {
+      setStatus('err', '❌ ' + e.message);
+      notif('อ่านไฟล์ไม่ได้: ' + e.message, 'warn');
+    }
+  };
+  reader.readAsText(file);
+}
+
+// Parse filename: PEPPERSTONE_XAUUSD__1W.csv → { sym: 'XAUUSD', tf: '1W' }
+function parseFilename(name) {
+  // Remove extension
+  const base = name.replace(/\.csv$/i, '');
+  // Split by _ or __
+  const parts = base.split(/_{1,2}/);
+  // TF is usually last part: 1W, 1D, 4H, 1H, 15, 5, etc.
+  const tfMap = { '1W':'1W','1D':'1D','4H':'4H','1H':'1H','30':'30m','15':'15m','5':'5m','1':'1m','1MO':'1Mo','1WK':'1W' };
+  let tf = '—', sym = '—';
+  const lastPart = parts[parts.length - 1].toUpperCase();
+  tf = tfMap[lastPart] || lastPart;
+  // Symbol: try 2nd part from common broker_SYMBOL__TF pattern
+  if (parts.length >= 2) {
+    // Find the part that looks like a symbol (not TF, not exchange name)
+    // Usually format: BROKER_SYMBOL__TF or EXCHANGE_SYMBOL_TF
+    const candidates = parts.slice(1, -1).filter(p => p && p !== '');
+    sym = candidates.join('_') || parts[0];
+  } else {
+    sym = parts[0];
+  }
+  return { sym: sym.toUpperCase(), tf };
+}
+
+// Parse CSV text: supports time,open,high,low,close (with optional volume)
+function parseCSVText(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) throw new Error('ไฟล์ต้องมีอย่างน้อย 2 บรรทัด');
+  const header = lines[0].toLowerCase().split(',').map(h => h.trim());
+  const ti = header.indexOf('time');
+  const oi = header.indexOf('open');
+  const hi = header.indexOf('high');
+  const li = header.indexOf('low');
+  const ci = header.indexOf('close');
+  if (ti < 0 || oi < 0 || hi < 0 || li < 0 || ci < 0)
+    throw new Error('ต้องมีคอลัมน์ time,open,high,low,close');
+
+  const bars = [];
+  for (let i = 1; i < lines.length; i++) {
+    const row = lines[i].trim();
+    if (!row) continue;
+    const cols = row.split(',');
+    const timeStr = cols[ti]?.trim();
+    const o = parseFloat(cols[oi]);
+    const h = parseFloat(cols[hi]);
+    const l = parseFloat(cols[li]);
+    const c = parseFloat(cols[ci]);
+    if (!timeStr || isNaN(o) || isNaN(h) || isNaN(l) || isNaN(c)) continue;
+    // Parse UTC time: supports "2020-07-06", "2020-07-06 00:00:00", "2020-07-06T00:00:00"
+    let ts = Date.parse(timeStr.includes(' ') ? timeStr.replace(' ', 'T') + 'Z' : timeStr + 'T00:00:00Z');
+    if (isNaN(ts)) ts = new Date(timeStr).getTime();
+    if (isNaN(ts)) continue;
+    bars.push({ t: ts, o, h, l, c });
+  }
+  return bars;
+}
+
+function clearCsv() {
+  S.allBars = []; S.csvMeta = null; S.visIdx = 0;
+  document.getElementById('csvLoadedInfo').style.display = 'none';
+  document.getElementById('dropZone').style.display = 'block';
+  document.getElementById('csvInfo').style.display = 'none';
+  document.getElementById('csvFileInput').value = '';
+  setStatus('ok', 'ลบ CSV แล้ว — เลือกไฟล์ใหม่หรือสลับไป Yahoo Finance');
+  refreshAll();
+}
+
+function formatDate(ms) {
+  const d = new Date(ms);
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2,'0') + '-' + String(d.getUTCDate()).padStart(2,'0');
+}
+
+
+// ── REPLAY ────────────────────────────────────────────────────────────────
+function bars() { return S.allBars.slice(0, S.visIdx); }
+function lastBar() { return S.allBars[S.visIdx-1] || null; }
+
+function stepNext() { if (S.visIdx >= S.allBars.length) { stopPlay(); return; } S.visIdx++; checkSLTP(); refreshAll(); }
+function stepBack() { if (S.visIdx <= 1) return; S.visIdx--; refreshAll(); }
+function goToEnd() { stopPlay(); while (S.visIdx < S.allBars.length) { S.visIdx++; checkSLTP(); } refreshAll(); }
+function togglePlay() { S.playing ? stopPlay() : startPlay(); }
+function startPlay() {
+  if (S.visIdx >= S.allBars.length) return;
+  S.playing = true;
+  document.getElementById('playBtn').textContent = '⏸';
+  document.getElementById('playBtn').classList.add('playing');
+  tick();
+}
+function stopPlay() {
+  S.playing = false; clearTimeout(S.playTimer);
+  document.getElementById('playBtn').textContent = '▶';
+  document.getElementById('playBtn').classList.remove('playing');
+}
+function tick() {
+  if (!S.playing) return;
+  S.playTimer = setTimeout(() => { stepNext(); if (S.visIdx < S.allBars.length) tick(); else stopPlay(); }, S.speed);
+}
+function seekBar(e) {
+  const r = document.getElementById('pTrack').getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  const newIdx = Math.max(1, Math.round(pct * S.allBars.length));
+  if (newIdx > S.visIdx) { S.visIdx = newIdx; checkSLTP(); } else S.visIdx = newIdx;
+  refreshAll();
+}
+
+// ── SL / TP ───────────────────────────────────────────────────────────────
+function checkSLTP() {
+  const lb = lastBar(); if (!lb) return;
+  const fee = +document.getElementById('cFee').value / 100;
+  S.orders.filter(o => o.status === 'open').forEach(o => {
+    if (o.sl) { const hit = o.side==='long' ? lb.l<=o.sl : lb.h>=o.sl; if (hit) { autoClose(o,o.sl,'SL',fee); return; } }
+    if (o.tp) { const hit = o.side==='long' ? lb.h>=o.tp : lb.l<=o.tp; if (hit) { autoClose(o,o.tp,'TP',fee); } }
+  });
+}
+function autoClose(o, xp, reason, feeRate) {
+  const xFee = o.qty * o.lev * feeRate;
+  const diff = o.side==='long' ? xp-o.ep : o.ep-xp;
+  const pnl = (diff/o.ep)*o.qty*o.lev - o.fee - xFee;
+  o.status='closed'; o.xp=xp; o.closeTime=lastBar()?.t||Date.now(); o.pnl=+pnl.toFixed(2); o.reason=reason;
+  S.bal += o.qty+pnl;
+  setTimeout(() => notif(`${reason} Hit! ${o.side.toUpperCase()} @ ${fmtP(xp)} | P&L: ${pnl>=0?'+':''}$${pnl.toFixed(2)}`, reason==='SL'?'neg':'pos'), 10);
+}
+
+// ── DRAW ──────────────────────────────────────────────────────────────────
+function draw() {
+  const W = cv.width/(window.devicePixelRatio||1);
+  const H = cv.height/(window.devicePixelRatio||1);
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0a0e1a'; ctx.fillRect(0,0,W,H);
+  const pad = {l:6,r:80,t:10,b:32};
+  const data = bars();
+  if (!data.length) {
+    ctx.fillStyle='#64748b'; ctx.font='13px Inter,sans-serif'; ctx.textAlign='center';
+    ctx.fillText(S.allBars.length === 0 ? 'กด 📂 Import CSV เพื่อเริ่มต้น' : 'ไม่มีข้อมูล', W/2, H/2);
+    return;
+  }
+  if (S.tab==='candle') drawCandle(W,H,pad,data);
+  else if (S.tab==='pnl') drawPnl(W,H,pad);
+  else if (S.tab==='equity') drawLine(W,H,pad,'equity');
+  else drawLine(W,H,pad,'dd');
+}
+
+function grid(W,H,pad,yMn,yMx,n,fmtY) {
+  ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1;
+  for (let i=0;i<=n;i++) {
+    const y=pad.t+(H-pad.t-pad.b)*i/n;
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke();
+    const v=yMx-(yMx-yMn)*i/n;
+    ctx.fillStyle='#64748b'; ctx.font='9px Space Mono,monospace'; ctx.textAlign='left';
+    ctx.fillText(fmtY(v), W-pad.r+3, y+3);
+  }
+}
+
+function fmtP(v) {
+  if (v===undefined||v===null||isNaN(v)) return '—';
+  const a=Math.abs(v);
+  if (a>=10000) return '$'+v.toLocaleString('en',{maximumFractionDigits:0});
+  if (a>=100)   return '$'+v.toFixed(2);
+  if (a>=1)     return '$'+v.toFixed(3);
+  return '$'+v.toFixed(5);
+}
+function fmtT(ms) {
+  const d=new Date(ms);
+  const tf=S.tf;
+  if (tf==='1wk'||tf==='1W'||tf==='1mo'||tf==='1Mo')
+    return (d.getUTCMonth()+1)+'/'+d.getUTCDate()+'/'+String(d.getUTCFullYear()).slice(2);
+  return (d.getUTCMonth()+1)+'/'+d.getUTCDate()+' '+String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
+}
+
+function drawCandle(W,H,pad,data) {
+  const vs=data.flatMap(d=>[d.h,d.l]);
+  let yMn=Math.min(...vs),yMx=Math.max(...vs);
+  const mg=(yMx-yMn)*.06; yMn-=mg; yMx+=mg;
+  const cW=(W-pad.l-pad.r)/Math.max(data.length,1);
+  const bW=Math.max(1,cW*.65);
+  grid(W,H,pad,yMn,yMx,6,fmtP);
+  const toY=v=>pad.t+(yMx-v)/(yMx-yMn)*(H-pad.t-pad.b);
+
+  // X labels
+  ctx.fillStyle='#64748b'; ctx.font='9px Inter,sans-serif'; ctx.textAlign='center';
+  const step=Math.max(1,Math.floor(data.length/7));
+  for (let i=0;i<data.length;i+=step) ctx.fillText(fmtT(data[i].t), pad.l+(i+.5)*cW, H-pad.b+13);
+
+  // Candles
+  data.forEach((d,i) => {
+    const x=pad.l+(i+.5)*cW;
+    const isUp=d.c>=d.o;
+    const col=isUp?'#10b981':'#ef4444';
+    ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,toY(d.h)); ctx.lineTo(x,toY(d.l)); ctx.stroke();
+    const bT=toY(Math.max(d.o,d.c)), bB=toY(Math.min(d.o,d.c));
+    ctx.fillRect(x-bW/2, bT, bW, Math.max(1,bB-bT));
+  });
+
+  // Order markers
+  S.orders.forEach(ord => {
+    const idx=S.allBars.findIndex(b=>b.t>=ord.time);
+    if (idx<0||idx>=data.length) return;
+    const x=pad.l+(idx+.5)*cW;
+    const y=toY(ord.ep);
+    const isL=ord.side==='long';
+    ctx.fillStyle=isL?'#10b981':'#ef4444';
+    ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=1;
+    ctx.beginPath();
+    if (isL){ctx.moveTo(x,y-7);ctx.lineTo(x-5,y+3);ctx.lineTo(x+5,y+3);}
+    else{ctx.moveTo(x,y+7);ctx.lineTo(x-5,y-3);ctx.lineTo(x+5,y-3);}
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (ord.status==='open') {
+      const dline=(price,col,lbl)=>{
+        if (!price||price<yMn||price>yMx) return;
+        const py=toY(price);
+        ctx.strokeStyle=col; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+        ctx.beginPath(); ctx.moveTo(x,py); ctx.lineTo(W-pad.r,py); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle=col; ctx.font='8px Space Mono,monospace'; ctx.textAlign='left';
+        ctx.fillText(lbl+' '+fmtP(price), W-pad.r+3, py+3);
+      };
+      dline(ord.sl,'rgba(239,68,68,0.65)','SL');
+      dline(ord.tp,'rgba(16,185,129,0.65)','TP');
+    }
+  });
+
+  // Current price line
+  const last=data[data.length-1];
+  const py=toY(last.c);
+  const isUp=last.c>=last.o;
+  ctx.strokeStyle=isUp?'rgba(16,185,129,0.5)':'rgba(239,68,68,0.5)';
+  ctx.lineWidth=1; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(pad.l,py); ctx.lineTo(W-pad.r,py); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle=isUp?'#10b981':'#ef4444';
+  ctx.font='bold 9px Space Mono,monospace'; ctx.textAlign='left';
+  ctx.fillText(fmtP(last.c), W-pad.r+3, py+3);
+  ctx.fillStyle='rgba(59,130,246,0.9)';
+  ctx.beginPath(); ctx.arc(pad.l+(data.length-.5)*cW, toY(last.c), 3, 0, Math.PI*2); ctx.fill();
+}
+
+function drawPnl(W,H,pad) {
+  const cl=S.orders.filter(o=>o.status==='closed');
+  if (!cl.length){noData(W,H,'No closed trades yet');return;}
+  const vals=cl.map(o=>o.pnl);
+  const mx=Math.max(Math.abs(Math.min(...vals)),Math.abs(Math.max(...vals)),1);
+  const yMn=-mx*1.2,yMx=mx*1.2;
+  grid(W,H,pad,yMn,yMx,6,v=>(v>=0?'+':'')+' $'+Math.abs(v).toFixed(0));
+  const zero=pad.t+yMx/(yMx-yMn)*(H-pad.t-pad.b);
+  ctx.strokeStyle='rgba(255,255,255,0.12)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(pad.l,zero); ctx.lineTo(W-pad.r,zero); ctx.stroke();
+  const bW=Math.max(2,(W-pad.l-pad.r)/cl.length*.68);
+  cl.forEach((o,i)=>{
+    const x=pad.l+(i+.5)*(W-pad.l-pad.r)/cl.length;
+    const y=pad.t+(yMx-o.pnl)/(yMx-yMn)*(H-pad.t-pad.b);
+    ctx.fillStyle=o.pnl>=0?'rgba(16,185,129,.75)':'rgba(239,68,68,.75)';
+    if (o.pnl>=0) ctx.fillRect(x-bW/2,y,bW,zero-y); else ctx.fillRect(x-bW/2,zero,bW,y-zero);
+  });
+  ctx.fillStyle='#64748b'; ctx.font='9px Inter'; ctx.textAlign='center';
+  const st=Math.max(1,Math.floor(cl.length/8));
+  cl.forEach((_,i)=>{if(i%st===0)ctx.fillText('#'+(i+1),pad.l+(i+.5)*(W-pad.l-pad.r)/cl.length,H-pad.b+13);});
+}
+
+function drawLine(W,H,pad,mode) {
+  const cl=S.orders.filter(o=>o.status==='closed').sort((a,b)=>a.time-b.time);
+  let pts=[];
+  if (mode==='equity'){let eq=S.startBal;pts=[{t:S.allBars[0]?.t||Date.now(),v:eq}];cl.forEach(o=>{eq+=o.pnl;pts.push({t:o.closeTime||o.time,v:+eq.toFixed(2)});});}
+  else{let eq=S.startBal,pk=S.startBal;pts=[{t:S.allBars[0]?.t||Date.now(),v:0}];cl.forEach(o=>{eq+=o.pnl;if(eq>pk)pk=eq;pts.push({t:o.closeTime||o.time,v:pk>0?+((eq-pk)/pk*100).toFixed(2):0});});}
+  if (pts.length<2){noData(W,H,'Place and close trades to see this chart');return;}
+  const vals=pts.map(p=>p.v);
+  let yMn=Math.min(...vals),yMx=Math.max(...vals);
+  const mg=(yMx-yMn)*.1||1; yMn-=mg; yMx+=mg;
+  grid(W,H,pad,yMn,yMx,6,mode==='equity'?fmtP:v=>v.toFixed(1)+'%');
+  const col=mode==='equity'?'#6366f1':'#ef4444';
+  const fc=mode==='equity'?'rgba(99,102,241,0.07)':'rgba(239,68,68,0.07)';
+  const tMn=pts[0].t,tR=(pts[pts.length-1].t-tMn)||1;
+  const toX=t=>pad.l+(t-tMn)/tR*(W-pad.l-pad.r);
+  const toY=v=>pad.t+(yMx-v)/(yMx-yMn)*(H-pad.t-pad.b);
+  ctx.beginPath(); ctx.moveTo(toX(pts[0].t),toY(pts[0].v));
+  pts.forEach(p=>ctx.lineTo(toX(p.t),toY(p.v)));
+  ctx.lineTo(toX(pts[pts.length-1].t),H-pad.b); ctx.lineTo(toX(pts[0].t),H-pad.b);
+  ctx.closePath(); ctx.fillStyle=fc; ctx.fill();
+  ctx.beginPath(); ctx.strokeStyle=col; ctx.lineWidth=2;
+  pts.forEach((p,i)=>{i?ctx.lineTo(toX(p.t),toY(p.v)):ctx.moveTo(toX(p.t),toY(p.v));});
+  ctx.stroke();
+  ctx.fillStyle=col;
+  pts.forEach(p=>{ctx.beginPath();ctx.arc(toX(p.t),toY(p.v),2.5,0,Math.PI*2);ctx.fill();});
+  ctx.fillStyle='#64748b'; ctx.font='9px Inter'; ctx.textAlign='center';
+  const st=Math.max(1,Math.floor(pts.length/6));
+  pts.forEach((p,i)=>{if(i%st===0)ctx.fillText(fmtT(p.t),toX(p.t),H-pad.b+13);});
+}
+
+function noData(W,H,msg){ctx.fillStyle='#64748b';ctx.font='12px Inter,sans-serif';ctx.textAlign='center';ctx.fillText(msg,W/2,H/2);}
+
+// ── STATS ─────────────────────────────────────────────────────────────────
+function updateStats() {
+  const cl=S.orders.filter(o=>o.status==='closed');
+  const pnl=cl.reduce((s,o)=>s+o.pnl,0);
+  const wins=cl.filter(o=>o.pnl>0),loss=cl.filter(o=>o.pnl<=0);
+  const wr=cl.length?((wins.length/cl.length)*100).toFixed(1):0;
+  const aw=wins.length?(wins.reduce((s,o)=>s+o.pnl,0)/wins.length).toFixed(2):0;
+  const al=loss.length?Math.abs(loss.reduce((s,o)=>s+o.pnl,0)/loss.length).toFixed(2):0;
+  let eq=S.startBal,pk=S.startBal,mdd=0;
+  [...cl].sort((a,b)=>a.time-b.time).forEach(o=>{eq+=o.pnl;if(eq>pk)pk=eq;const dd=pk>0?(pk-eq)/pk*100:0;if(dd>mdd)mdd=dd;});
+  const gw=wins.reduce((s,o)=>s+o.pnl,0),gl=Math.abs(loss.reduce((s,o)=>s+o.pnl,0));
+  const pf=gl>0?(gw/gl).toFixed(2):(gw>0?'∞':'—');
+  let sh='—';
+  if(cl.length>1){const ps=cl.map(o=>o.pnl),m=ps.reduce((a,b)=>a+b,0)/ps.length,sd=Math.sqrt(ps.reduce((s,v)=>s+(v-m)**2,0)/ps.length);sh=sd>0?(m/sd*Math.sqrt(252)).toFixed(2):'—';}
+  const set=(id,v,c)=>{const e=document.getElementById(id);e.textContent=v;e.className='sval '+c;};
+  set('s_pnl',(pnl>=0?'+':'')+'$'+Math.abs(pnl).toFixed(2),pnl>=0?'g':'r');
+  set('s_wr',wr+'%','w');set('s_tr',cl.length,'w');
+  set('s_aw','$'+aw,'g');set('s_al','-$'+al,'r');
+  set('s_dd',mdd.toFixed(1)+'%','r');set('s_pf',pf,'w');set('s_sh',sh,'w');
+}
+function syncBal(){
+  const pnl=S.orders.filter(o=>o.status==='closed').reduce((s,o)=>s+o.pnl,0);
+  S.bal=S.startBal+pnl;
+  const el=document.getElementById('balVal');
+  el.textContent='$'+S.bal.toFixed(2);
+  el.style.color=pnl>=0?'var(--green)':'var(--red)';
+}
+function updateProgressBar(){
+  const pct=S.allBars.length?(S.visIdx/S.allBars.length)*100:0;
+  document.getElementById('pFill').style.width=pct+'%';
+  document.getElementById('pThumb').style.left=pct+'%';
+  document.getElementById('barCnt').textContent=S.visIdx+' / '+S.allBars.length;
+  const lb=lastBar();
+  document.getElementById('curPriceEl').textContent=lb?fmtP(lb.c):'—';
+}
+
+function renderOrders(){
+  const body=document.getElementById('ordBody');
+  const all=[...S.orders].reverse();
+  document.getElementById('ordCnt').textContent=all.length;
+  if(!all.length){body.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:12px">No orders yet</td></tr>';return;}
+  body.innerHTML=all.map(o=>{
+    const pnlTxt=o.status==='closed'?(o.pnl>=0?'+':'')+'$'+o.pnl.toFixed(2):'—';
+    const pc=o.status==='closed'?(o.pnl>=0?'var(--green)':'var(--red)'):'var(--muted)';
+    const rTag=o.reason?`<span class="tag tag-${o.reason.toLowerCase()}">${o.reason}</span>`:(o.status==='closed'?'<span class="tag tag-manual">Manual</span>':'—');
+    return`<tr>
+      <td><span class="tag tag-${o.side}">${o.side.toUpperCase()}</span></td>
+      <td style="color:var(--muted)">${o.type}</td>
+      <td style="font-family:'Space Mono',monospace">$${o.qty}</td>
+      <td style="font-family:'Space Mono',monospace">${fmtP(o.ep)}</td>
+      <td style="font-family:'Space Mono',monospace">${o.xp?fmtP(o.xp):'—'}</td>
+      <td style="font-family:'Space Mono',monospace;color:${pc};font-weight:700">${pnlTxt}</td>
+      <td>${rTag}</td>
+      <td><span class="tag tag-${o.status}">${o.status}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderPos(){
+  const list=document.getElementById('posList');
+  const open=S.orders.filter(o=>o.status==='open');
+  document.getElementById('openCount').textContent=open.length?`(${open.length})`:'';
+  if(!open.length){list.innerHTML='<div class="empty">No open positions</div>';return;}
+  const lb=lastBar();const cur=lb?lb.c:0;
+  list.innerHTML=open.map(o=>{
+    const unr=o.side==='long'?(cur-o.ep)*o.qty*o.lev/o.ep:(o.ep-cur)*o.qty*o.lev/o.ep;
+    const c=unr>=0?'var(--green)':'var(--red)';
+    return`<div class="pcard">
+      <div class="pcard-row">
+        <div><span class="psl ${o.side}">${o.side.toUpperCase()} ${o.lev}x</span>
+          <span class="pdet" style="margin-left:5px">$${o.qty} @ ${fmtP(o.ep)}</span></div>
+        <div style="display:flex;align-items:center">
+          <span class="ppnl" style="color:${c}">${unr>=0?'+':''}$${unr.toFixed(2)}</span>
+          <button class="cbtn" onclick="closePos(${o.id})">Close</button>
+        </div>
+      </div>
+      <div class="pcard-row" style="margin-top:3px">
+        <span class="pdet">SL:<span style="color:#f87171"> ${o.sl?fmtP(o.sl):'—'}</span></span>
+        <span class="pdet">TP:<span style="color:#34d399"> ${o.tp?fmtP(o.tp):'—'}</span></span>
+        <span class="pdet">Now:<span style="color:var(--text)"> ${fmtP(cur)}</span></span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function refreshAll(){draw();updateProgressBar();updateStats();syncBal();renderPos();renderOrders();}
+
+// ── ORDERS ────────────────────────────────────────────────────────────────
+function placeOrder(){
+  if(!S.allBars.length){notif('โหลดข้อมูลก่อนครับ','warn');return;}
+  const type=document.getElementById('oType').value;
+  const qty=+document.getElementById('oQty').value;
+  const lev=+document.getElementById('oLev').value;
+  const slP=+document.getElementById('oSL').value/100;
+  const tpP=+document.getElementById('oTP').value/100;
+  const fee=+document.getElementById('cFee').value/100;
+  if(!qty||qty<=0){notif('กรอก Amount','info');return;}
+  if(qty>S.bal){notif('Balance ไม่พอ','info');return;}
+  const lb=lastBar();const cur=lb?lb.c:0;
+  let ep=cur;
+  if(type!=='market'){ep=+document.getElementById('oPrice').value;if(!ep){notif('กรอก Price','info');return;}}
+  const sl=slP>0?(S.side==='long'?ep*(1-slP):ep*(1+slP)):null;
+  const tp=tpP>0?(S.side==='long'?ep*(1+tpP):ep*(1-tpP)):null;
+  const ord={id:S.oid++,sym:S.sym,side:S.side,type,qty,lev,ep,sl,tp,fee:qty*lev*fee,status:'open',pnl:0,time:lb?.t||Date.now()};
+  S.orders.push(ord);S.bal-=qty;
+  refreshAll();
+  notif((S.side==='long'?'▲ Long':'▼ Short')+' @ '+fmtP(ep)+' — กด ▶ Play',S.side==='long'?'pos':'neg');
+}
+
+function closePos(id){
+  const o=S.orders.find(x=>x.id===id);if(!o||o.status!=='open')return;
+  const lb=lastBar();const cur=lb?lb.c:0;
+  const fee=+document.getElementById('cFee').value/100;
+  const xFee=o.qty*o.lev*fee;
+  const diff=o.side==='long'?cur-o.ep:o.ep-cur;
+  const pnl=(diff/o.ep)*o.qty*o.lev-o.fee-xFee;
+  o.status='closed';o.xp=cur;o.closeTime=lb?.t||Date.now();o.pnl=+pnl.toFixed(2);o.reason='Manual';
+  S.bal+=o.qty+pnl;refreshAll();
+  notif('Closed @ '+fmtP(cur)+' | P&L: '+(pnl>=0?'+':'')+'$'+pnl.toFixed(2),pnl>=0?'pos':'neg');
+}
+
+// ── UI ────────────────────────────────────────────────────────────────────
+function setSide(s){
+  S.side=s;
+  document.getElementById('bL').classList.toggle('active',s==='long');
+  document.getElementById('bS').classList.toggle('active',s==='short');
+  const b=document.getElementById('subBtn');b.className='subbtn '+s;
+  b.textContent=s==='long'?'▲ Buy / Long':'▼ Sell / Short';
+}
+function togglePRow(){document.getElementById('pRow').style.display=document.getElementById('oType').value==='market'?'none':'flex';}
+function setTab(el,t){S.tab=t;document.querySelectorAll('.ctab').forEach(b=>b.classList.remove('active'));el.classList.add('active');draw();}
+function clearClosed(){S.orders=S.orders.filter(o=>o.status==='open');renderOrders();draw();}
+function resetSession(){
+  stopPlay();S.orders=[];S.oid=1;
+  S.visIdx=Math.min(60,S.allBars.length);
+  S.startBal=+document.getElementById('cCap').value||10000;
+  S.bal=S.startBal;refreshAll();
+}
+function setStatus(type,msg){
+  document.getElementById('spinner').style.display=type==='loading'?'block':'none';
+  const el=document.getElementById('statusMsg');el.textContent=msg;
+  el.style.color=type==='err'?'var(--red)':type==='ok'?'var(--green)':type==='warn'?'var(--yellow)':'var(--muted)';
+}
+function notif(msg,type){
+  const el=document.getElementById('notif');el.textContent=msg;
+  el.className='notif '+type+' show';
+  clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),3500);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+resize();
+// Start on Yahoo Finance tab
+fetchYf();
+</script>
+</body>
+</html>
