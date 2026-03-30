@@ -129,6 +129,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .session-item-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
 .session-name{font-weight:600;color:var(--text);font-size:13px;}
 .session-date{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace;}
+.session-actions{display:flex;gap:4px;align-items:center;}
+.session-action-btn{background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;padding:4px;border-radius:3px;transition:all .15s;}
+.session-action-btn:hover{background:var(--bg3);color:var(--text);}
+.session-action-btn.delete:hover{background:rgba(239,68,68,0.1);color:var(--red);}
 .session-notes{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4;}
 .session-stats{display:flex;gap:16px;margin-top:8px;font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;}
 .empty-sessions{padding:20px;text-align:center;color:var(--muted);font-size:12px;}

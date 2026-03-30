@@ -312,6 +312,30 @@
   </div>
 </div>
 
+<!-- SESSION EDIT DIALOG -->
+<div class="modal" id="editSessionDialog" style="display:none">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>✏️ Edit Trading Session</h3>
+      <button class="modal-close" onclick="closeEditSessionDialog()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Session Name:</label>
+        <input type="text" id="editSessionNameInput" placeholder="My Trading Session" maxlength="50">
+      </div>
+      <div class="form-group">
+        <label>Notes (optional):</label>
+        <textarea id="editSessionNotesInput" placeholder="Add notes about this trading session..." rows="3"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="abtn ghost" onclick="closeEditSessionDialog()">Cancel</button>
+      <button class="abtn" onclick="updateSession()">Update Session</button>
+    </div>
+  </div>
+</div>
+
 <script src="constants.js"></script>
 <script>
 // ── STATE ─────────────────────────────────────────────────────────────────
@@ -1446,6 +1470,10 @@ function showLoadSessionDialog() {
           <div class="session-item-header">
             <span class="session-name">${session.name}</span>
             <span class="session-date">${date.toLocaleDateString()} ${date.toLocaleTimeString()}</span>
+            <div class="session-actions">
+              <button class="session-action-btn" onclick="event.stopPropagation(); editSession(${session.id})" title="Edit Session">✏️</button>
+              <button class="session-action-btn delete" onclick="event.stopPropagation(); deleteSession(${session.id})" title="Delete Session">🗑️</button>
+            </div>
           </div>
           ${session.notes ? `<div class="session-notes">${session.notes}</div>` : ''}
           <div class="session-stats">
@@ -1538,6 +1566,62 @@ function deleteSession(sessionId) {
   
   showLoadSessionDialog(); // Refresh the list
   notif('Session deleted', 'info');
+}
+
+function editSession(sessionId) {
+  const sessions = JSON.parse(localStorage.getItem('tradingSessions') || '[]');
+  const session = sessions.find(s => s.id === sessionId);
+  
+  if (!session) {
+    notif('Session not found', 'warn');
+    return;
+  }
+  
+  // Store current editing session ID
+  S.editingSessionId = sessionId;
+  
+  // Populate edit form
+  document.getElementById('editSessionNameInput').value = session.name;
+  document.getElementById('editSessionNotesInput').value = session.notes || '';
+  
+  // Show edit dialog
+  document.getElementById('editSessionDialog').style.display = 'flex';
+  document.getElementById('editSessionNameInput').focus();
+}
+
+function closeEditSessionDialog() {
+  document.getElementById('editSessionDialog').style.display = 'none';
+  S.editingSessionId = null;
+}
+
+function updateSession() {
+  const name = document.getElementById('editSessionNameInput').value.trim();
+  const notes = document.getElementById('editSessionNotesInput').value.trim();
+  
+  if (!name) {
+    notif('Please enter a session name', 'warn');
+    return;
+  }
+  
+  const sessions = JSON.parse(localStorage.getItem('tradingSessions') || '[]');
+  const sessionIndex = sessions.findIndex(s => s.id === S.editingSessionId);
+  
+  if (sessionIndex === -1) {
+    notif('Session not found', 'warn');
+    return;
+  }
+  
+  // Update session
+  sessions[sessionIndex].name = name;
+  sessions[sessionIndex].notes = notes;
+  sessions[sessionIndex].updatedAt = new Date().toISOString();
+  
+  // Save to localStorage
+  localStorage.setItem('tradingSessions', JSON.stringify(sessions));
+  
+  closeEditSessionDialog();
+  showLoadSessionDialog(); // Refresh the list
+  notif(`Session "${name}" updated successfully!`, 'pos');
 }
 
 function exportAllSessions() {
