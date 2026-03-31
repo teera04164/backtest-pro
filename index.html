@@ -148,6 +148,7 @@
       <div class="ctab" onclick="setTab(this,'pnl')">P&L per Trade</div>
       <div class="ctab" onclick="setTab(this,'equity')">Equity Curve</div>
       <div class="ctab" onclick="setTab(this,'dd')">Drawdown</div>
+      <div class="ctab" onclick="setTab(this,'holdsummary')">Hold Summary</div>
     </div>
     <div class="chart-wrap" id="chartWrap"><canvas id="cv"></canvas></div>
     <div class="ord-panel">
@@ -1558,6 +1559,7 @@ function draw() {
   if (S.tab==='candle') drawCandle(W,H,pad,data);
   else if (S.tab==='pnl') drawPnl(W,H,pad);
   else if (S.tab==='equity') drawLine(W,H,pad,'equity');
+  else if (S.tab==='holdsummary') drawHoldSummary(W,H);
   else drawLine(W,H,pad,'dd');
 }
 
@@ -1862,6 +1864,160 @@ function drawLine(W,H,pad,mode) {
 }
 
 function noData(W,H,msg){ctx.fillStyle='#64748b';ctx.font='12px Inter,sans-serif';ctx.textAlign='center';ctx.fillText(msg,W/2,H/2);}
+
+function drawHoldSummary(W,H) {
+  const cl = S.orders.filter(o=>o.status==='closed');
+  const allBars = S.allBars.slice(0, S.visIdx);
+
+  // ── helpers ──
+  const fmtDur = ms => {
+    const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60),d=Math.floor(h/24);
+    if(d>0) return d+'d '+( h%24)+'h';
+    if(h>0) return h+'h '+(m%60)+'m';
+    return m+'m';
+  };
+  const fmtDate = ms => { const d=new Date(ms); return (d.getUTCMonth()+1)+'/'+d.getUTCDate()+'/'+d.getUTCFullYear(); };
+  const col = v => v>=0 ? '#10b981' : '#ef4444';
+
+  // ── Strategy stats ──
+  const pnl = cl.reduce((s,o)=>s+o.pnl,0);
+  const wins = cl.filter(o=>o.pnl>0), loss = cl.filter(o=>o.pnl<=0);
+  const wr = cl.length ? (wins.length/cl.length*100) : 0;
+  const gw = wins.reduce((s,o)=>s+o.pnl,0);
+  const gl = Math.abs(loss.reduce((s,o)=>s+o.pnl,0));
+  const pf = gl>0 ? (gw/gl) : (gw>0 ? Infinity : 0);
+  let eq=S.startBal,pk=S.startBal,mdd=0;
+  [...cl].sort((a,b)=>a.time-b.time).forEach(o=>{eq+=o.pnl;if(eq>pk)pk=eq;const dd=pk>0?(pk-eq)/pk*100:0;if(dd>mdd)mdd=dd;});
+  const pnlPct = S.startBal>0 ? pnl/S.startBal*100 : 0;
+
+  // ── Hold duration stats ──
+  const sorted = [...cl].sort((a,b)=>a.time-b.time);
+  const firstEntryTime = sorted.length ? sorted[0].time : null;
+  const lastExitTime  = sorted.length ? Math.max(...sorted.map(o=>o.closeTime||o.time)) : null;
+  const totalSpan     = (firstEntryTime && lastExitTime) ? lastExitTime - firstEntryTime : 0;
+  const avgHoldMs     = cl.length ? cl.reduce((s,o)=>s+((o.closeTime||o.time)-o.time),0)/cl.length : 0;
+
+  // ── Buy & Hold benchmark ──
+  const firstBar = allBars[0], lastBar2 = allBars[allBars.length-1];
+  const bhPct  = (firstBar && lastBar2) ? (lastBar2.c - firstBar.o)/firstBar.o*100 : 0;
+  const bhPnl  = S.startBal * bhPct / 100;
+
+  // ── Layout ──
+  const px = 28, py = 24;
+  const secW = (W - px*3) / 2;
+  const rowH = 26, hdrH = 32, secPad = 14;
+
+  // section background helper
+  const drawSection = (x,y,w,h,title,accentColor) => {
+    ctx.fillStyle='rgba(255,255,255,0.04)';
+    ctx.beginPath(); ctx.roundRect(x,y,w,h,6); ctx.fill();
+    ctx.fillStyle=accentColor||'#6366f1';
+    ctx.fillRect(x,y,3,h);
+    ctx.fillStyle='#e2e8f0'; ctx.font='bold 11px Inter,sans-serif'; ctx.textAlign='left';
+    ctx.fillText(title.toUpperCase(), x+12, y+20);
+  };
+
+  const drawRow = (x,y,w,label,value,valueColor) => {
+    ctx.fillStyle='#64748b'; ctx.font='10px Inter,sans-serif'; ctx.textAlign='left';
+    ctx.fillText(label, x+12, y+14);
+    ctx.fillStyle=valueColor||'#e2e8f0'; ctx.font='bold 11px Space Mono,monospace'; ctx.textAlign='right';
+    ctx.fillText(value, x+w-12, y+14);
+    ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x+12,y+rowH-1); ctx.lineTo(x+w-12,y+rowH-1); ctx.stroke();
+  };
+
+  // ── Section 1: Strategy Performance ──
+  const s1x=px, s1y=py;
+  const s1rows=[
+    ['Total P&L',  (pnl>=0?'+':'')+'$'+Math.abs(pnl).toFixed(2)+' ('+(pnlPct>=0?'+':'')+pnlPct.toFixed(1)+'%)', col(pnl)],
+    ['Total Trades', cl.length+'', '#e2e8f0'],
+    ['Win / Loss',  wins.length+' / '+loss.length, '#e2e8f0'],
+    ['Win Rate',    wr.toFixed(1)+'%', wr>=50?'#10b981':'#f59e0b'],
+    ['Profit Factor', isFinite(pf)?pf.toFixed(2):'∞', pf>=1?'#10b981':'#ef4444'],
+    ['Max Drawdown', mdd.toFixed(1)+'%', '#ef4444'],
+  ];
+  const s1h = hdrH + s1rows.length*rowH + secPad;
+  drawSection(s1x,s1y,secW,s1h,'Strategy Performance','#6366f1');
+  s1rows.forEach(([lbl,val,vc],i)=>drawRow(s1x,s1y+hdrH+i*rowH,secW,lbl,val,vc));
+
+  // ── Section 2: Buy & Hold Benchmark ──
+  const s2x=px+secW+px, s2y=py;
+  const bhRows=[
+    ['First Bar Open',  firstBar ? fmtP(firstBar.o) : '—', '#e2e8f0'],
+    ['Last Bar Close',  lastBar2 ? fmtP(lastBar2.c) : '—', '#e2e8f0'],
+    ['Price Change',    (bhPct>=0?'+':'')+bhPct.toFixed(2)+'%', col(bhPct)],
+    ['B&H P&L (equiv)', (bhPnl>=0?'+':'')+'$'+Math.abs(bhPnl).toFixed(2), col(bhPnl)],
+    ['Strategy vs B&H', (pnlPct>=0?'+':'')+pnlPct.toFixed(1)+'% vs '+(bhPct>=0?'+':'')+bhPct.toFixed(1)+'%', col(pnlPct-bhPct)],
+    ['Outperformance',  (pnlPct-bhPct>=0?'+':'')+(pnlPct-bhPct).toFixed(2)+'%', col(pnlPct-bhPct)],
+  ];
+  const s2h = hdrH + bhRows.length*rowH + secPad;
+  drawSection(s2x,s2y,secW,s2h,'Buy & Hold Benchmark','#f59e0b');
+  bhRows.forEach(([lbl,val,vc],i)=>drawRow(s2x,s2y+hdrH+i*rowH,secW,lbl,val,vc));
+
+  // ── Section 3: Hold Duration ──
+  const s3y = py + Math.max(s1h,s2h) + 16;
+  const durRows=[
+    ['First Entry',    firstEntryTime ? fmtDate(firstEntryTime) : '—', '#e2e8f0'],
+    ['Last Exit',      lastExitTime   ? fmtDate(lastExitTime)   : '—', '#e2e8f0'],
+    ['Total Span',     totalSpan>0 ? fmtDur(totalSpan) : '—', '#e2e8f0'],
+    ['Avg Hold/Trade', avgHoldMs>0 ? fmtDur(avgHoldMs) : '—', '#e2e8f0'],
+    ['Longest Trade',  cl.length ? fmtDur(Math.max(...cl.map(o=>(o.closeTime||o.time)-o.time))) : '—', '#e2e8f0'],
+    ['Shortest Trade', cl.length ? fmtDur(Math.min(...cl.map(o=>(o.closeTime||o.time)-o.time))) : '—', '#e2e8f0'],
+  ];
+  const s3h = hdrH + durRows.length*rowH + secPad;
+  drawSection(s1x,s3y,secW,s3h,'Hold Duration (First → Last)','#10b981');
+  durRows.forEach(([lbl,val,vc],i)=>drawRow(s1x,s3y+hdrH+i*rowH,secW,lbl,val,vc));
+
+  // ── Section 4: Per-trade list ──
+  const s4x=px+secW+px, s4y=s3y;
+  const maxListH = H - s4y - py;
+  const listRows = Math.min(sorted.length, Math.floor((maxListH-hdrH)/rowH));
+  const s4h = hdrH + listRows*rowH + secPad;
+  drawSection(s4x,s4y,secW,s4h,'Closed Trades (oldest → newest)','#8b5cf6');
+
+  if(!sorted.length){
+    ctx.fillStyle='#64748b'; ctx.font='11px Inter,sans-serif'; ctx.textAlign='center';
+    ctx.fillText('No closed trades yet', s4x+secW/2, s4y+hdrH+24);
+  } else {
+    // column headers
+    ctx.fillStyle='#475569'; ctx.font='9px Space Mono,monospace'; ctx.textAlign='left';
+    ctx.fillText('#', s4x+12, s4y+hdrH-8);
+    ctx.fillText('Side', s4x+30, s4y+hdrH-8);
+    ctx.fillText('P&L', s4x+80, s4y+hdrH-8);
+    ctx.fillText('Hold', s4x+150, s4y+hdrH-8);
+    ctx.fillText('Entry→Exit', s4x+210, s4y+hdrH-8);
+
+    sorted.slice(0, listRows).forEach((o,i)=>{
+      const ry = s4y+hdrH+i*rowH;
+      const hold = fmtDur((o.closeTime||o.time)-o.time);
+      const pnlStr = (o.pnl>=0?'+':'')+'$'+o.pnl.toFixed(2);
+      const entryStr = fmtDate(o.time);
+      const exitStr  = o.closeTime ? fmtDate(o.closeTime) : '—';
+      ctx.fillStyle='#64748b'; ctx.font='10px Space Mono,monospace'; ctx.textAlign='left';
+      ctx.fillText(i+1, s4x+12, ry+14);
+      ctx.fillStyle=o.side==='long'?'#10b981':'#ef4444';
+      ctx.fillText(o.side==='long'?'L':'S', s4x+30, ry+14);
+      ctx.fillStyle=col(o.pnl); ctx.font='bold 10px Space Mono,monospace';
+      ctx.fillText(pnlStr, s4x+80, ry+14);
+      ctx.fillStyle='#94a3b8'; ctx.font='10px Space Mono,monospace';
+      ctx.fillText(hold, s4x+150, ry+14);
+      ctx.fillText(entryStr+'→'+exitStr, s4x+210, ry+14);
+      ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(s4x+12,ry+rowH-1); ctx.lineTo(s4x+secW-12,ry+rowH-1); ctx.stroke();
+    });
+    if(sorted.length > listRows){
+      ctx.fillStyle='#475569'; ctx.font='9px Inter,sans-serif'; ctx.textAlign='center';
+      ctx.fillText('+ '+(sorted.length-listRows)+' more trades', s4x+secW/2, s4y+s4h-6);
+    }
+  }
+
+  // no data state
+  if(!cl.length){
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#64748b'; ctx.font='13px Inter,sans-serif'; ctx.textAlign='center';
+    ctx.fillText('No closed trades yet — summary will appear after first trade closes', W/2, H/2);
+  }
+}
 
 // ── STATS ─────────────────────────────────────────────────────────────────
 function updateStats() {
