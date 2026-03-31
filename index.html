@@ -19,7 +19,7 @@
     <span style="font-size:10px;color:var(--muted)" id="csvRowsPill"></span>
   </div>
 
-  <button class="abtn" style="padding:4px 12px;font-size:11px" onclick="document.getElementById('csvPanel').classList.toggle('show')">📂 Import CSV</button>
+  <button class="abtn" style="padding:4px 12px;font-size:11px" onclick="toggleCsvPanel()">📂 Import CSV</button>
 
   <div class="spacer"></div>
   <div class="bal"><span>Balance: </span><span id="balVal">$10,000.00</span></div>
@@ -35,6 +35,17 @@
     <div class="drop-title">ลาก CSV จาก TradingView มาวางที่นี่</div>
     <div class="drop-sub">หรือ <span>คลิกเพื่อเลือกไฟล์</span> — รองรับ format: <code style="color:var(--accent)">time,open,high,low,close</code></div>
     <div class="drop-sub" style="margin-top:4px">ชื่อไฟล์ เช่น <code style="color:var(--purple)">PEPPERSTONE_XAUUSD__1W.csv</code> → ระบบจะดึง Symbol และ TF ให้อัตโนมัติ</div>
+  </div>
+
+  <!-- Timeframe Selector -->
+  <div class="timeframe-selector" id="timeframeSelector" style="display:none">
+    <div class="timeframe-header">
+      <span class="timeframe-title">📊 Timeframes</span>
+      <button class="abtn ghost" style="padding:2px 8px;font-size:10px" onclick="clearAllTimeframes()">Clear All</button>
+    </div>
+    <div class="timeframe-list" id="timeframeList">
+      <div class="empty-timeframes">No timeframes loaded</div>
+    </div>
   </div>
 
   <!-- Loaded Info -->
@@ -399,7 +410,11 @@ const S = {
   csvMeta: null,
   panOffset: 0, isPanning: false, panStartX: 0, panStartOffset: 0,
   viewBars: 80,  // number of visible bars in viewport
-  mouseX: 0, mouseY: 0, hoveredBar: null
+  mouseX: 0, mouseY: 0, hoveredBar: null,
+  // Multiple timeframe support
+  multiTimeframes: {}, // { symbol: { tf: { bars, meta, filename } } }
+  currentSymbol: '',
+  currentTimeframe: ''
 };
 
 // ── AUTO-SAVE FUNCTIONALITY ──────────────────────────────────────────────
@@ -433,6 +448,10 @@ window.autoSaveSession = async function() {
         bal: S.bal,
         startBal: S.startBal,
         side: S.side,
+        // Multi-timeframe support
+        multiTimeframes: S.multiTimeframes,
+        currentSymbol: S.currentSymbol,
+        currentTimeframe: S.currentTimeframe,
         settings: {
           capital: document.getElementById('cCap')?.value || 10000,
           fee: document.getElementById('cFee')?.value || 0.1,
@@ -509,6 +528,24 @@ window.restoreAutoSave = async function() {
       S.startBal = data.startBal;
       S.side = data.side;
       
+      // Restore multi-timeframe data if available
+      if (data.multiTimeframes) {
+        S.multiTimeframes = data.multiTimeframes;
+        S.currentSymbol = data.currentSymbol || data.sym;
+        S.currentTimeframe = data.currentTimeframe || data.tf;
+      } else {
+        // Legacy session - create single timeframe structure
+        S.multiTimeframes = {};
+        S.multiTimeframes[data.sym] = {};
+        S.multiTimeframes[data.sym][data.tf] = {
+          bars: data.allBars,
+          meta: data.csvMeta,
+          filename: data.csvMeta?.filename || 'legacy'
+        };
+        S.currentSymbol = data.sym;
+        S.currentTimeframe = data.tf;
+      }
+      
       // Restore form settings
       if (data.settings) {
         document.getElementById('cCap').value = data.settings.capital;
@@ -523,10 +560,11 @@ window.restoreAutoSave = async function() {
       // Update UI
       if (S.source === 'csv' && S.csvMeta) {
         document.getElementById('csvPanel').classList.add('show');
+        document.getElementById('timeframeSelector').style.display = 'block';
         document.getElementById('csvLoadedInfo').style.display = 'flex';
-        document.getElementById('dropZone').style.display = 'none';
-        document.getElementById('metaSym').textContent = S.csvMeta.sym;
-        document.getElementById('metaTf').textContent = S.csvMeta.tf;
+        // Don't hide drop zone - keep it visible for multiple uploads
+        document.getElementById('metaSym').textContent = S.currentSymbol;
+        document.getElementById('metaTf').textContent = S.currentTimeframe;
         document.getElementById('metaBars').textContent = S.allBars.length;
         document.getElementById('metaFrom').textContent = formatDate(S.allBars[0].t);
         document.getElementById('metaTo').textContent = formatDate(S.allBars[S.allBars.length - 1].t);
@@ -539,9 +577,12 @@ window.restoreAutoSave = async function() {
         // Topbar pills
         document.getElementById('csvInfo').style.display = 'flex';
         document.getElementById('csvSymPill').style.display = 'inline-block';
-        document.getElementById('csvSymPill').textContent = S.csvMeta.sym;
-        document.getElementById('csvTfPill').textContent = S.csvMeta.tf;
+        document.getElementById('csvSymPill').textContent = S.currentSymbol;
+        document.getElementById('csvTfPill').textContent = S.currentTimeframe;
         document.getElementById('csvRowsPill').textContent = S.allBars.length + ' bars';
+        
+        // Update timeframe list
+        updateTimeframeList();
       }
       
       refreshAll();
@@ -575,6 +616,19 @@ window.addEventListener('beforeunload', function() {
 });
 
 // ── INITIALIZATION ───────────────────────────────────────────────────────────
+function toggleCsvPanel() {
+  const panel = document.getElementById('csvPanel');
+  const isVisible = panel.classList.contains('show');
+  panel.classList.toggle('show');
+  console.log('CSV Panel toggled. Was visible:', isVisible, 'Now visible:', !isVisible);
+  
+  // Force show panel for testing
+  if (!panel.classList.contains('show')) {
+    panel.style.display = 'block';
+    console.log('Force showing panel with inline style');
+  }
+}
+
 function loadDefaultData() {
   try {
     const meta = { sym: CONFIG.defaultData.symbol, tf: CONFIG.defaultData.timeframe };
@@ -582,44 +636,37 @@ function loadDefaultData() {
     
     if (!bars.length) throw new Error('Default data parsing failed');
 
-    S.allBars = bars;
-    S.csvMeta = { ...meta, filename: 'DEFAULT_DATA' };
-    S.source = 'csv';
-    S.sym = meta.sym;
-    S.tf = meta.tf;
-    S.visIdx = Math.min(CONFIG.defaultSettings.startBar, bars.length);
-    S.orders = []; S.oid = 1;
+    // Add to multi-timeframe structure
+    S.multiTimeframes = {};
+    S.multiTimeframes[meta.sym] = {};
+    S.multiTimeframes[meta.sym][meta.tf] = {
+      bars: bars,
+      meta: { ...meta, filename: 'DEFAULT_DATA' },
+      filename: 'DEFAULT_DATA'
+    };
+
+    // Load additional sample timeframes if available
+    if (CONFIG.sampleData && CONFIG.sampleData[meta.sym]) {
+      for (const tf in CONFIG.sampleData[meta.sym]) {
+        if (tf !== meta.tf) {
+          const tfData = CONFIG.sampleData[meta.sym][tf];
+          const tfBars = parseCSVText(tfData.data);
+          if (tfBars.length) {
+            S.multiTimeframes[meta.sym][tf] = {
+              bars: tfBars,
+              meta: { symbol: tfData.symbol, tf: tfData.tf, filename: 'SAMPLE_DATA' },
+              filename: 'SAMPLE_DATA'
+            };
+          }
+        }
+      }
+    }
+
+    // Switch to this timeframe
+    switchToTimeframe(meta.sym, meta.tf);
     
-    // Apply default settings
-    applyDefaultSettings();
-
-    // Update UI
-    document.getElementById('csvPanel').classList.add('show');
-    document.getElementById('csvLoadedInfo').style.display = 'flex';
-    document.getElementById('dropZone').style.display = 'none';
-    document.getElementById('metaSym').textContent = meta.sym;
-    document.getElementById('metaTf').textContent = meta.tf;
-    document.getElementById('metaBars').textContent = bars.length;
-    document.getElementById('metaFrom').textContent = formatDate(bars[0].t);
-    document.getElementById('metaTo').textContent = formatDate(bars[bars.length - 1].t);
-
-    // Set date input min/max values
-    const dateInput = document.getElementById('startDateInput');
-    dateInput.min = formatDate(bars[0].t);
-    dateInput.max = formatDate(bars[bars.length - 1].t);
-    dateInput.value = '';
-
-    // Topbar pills
-    document.getElementById('csvInfo').style.display = 'flex';
-    document.getElementById('csvSymPill').style.display = 'inline-block';
-    document.getElementById('csvSymPill').textContent = meta.sym;
-    document.getElementById('csvTfPill').textContent = meta.tf;
-    document.getElementById('csvRowsPill').textContent = bars.length + ' bars';
-
     setStatus('ok', `✓ โหลดข้อมูลตัวอย่าง: ${meta.sym} ${meta.tf} | ${bars.length} แท่งเทียน | UTC`);
     notif(`📂 โหลดข้อมูลตัวอย่าง ${meta.sym} ${meta.tf} สำเร็จ — ${bars.length} แท่ง`, 'csv');
-    
-    refreshAll();
   } catch (e) {
     setStatus('err', '❌ ' + e.message);
     notif('โหลดข้อมูลตัวอย่างไม่ได้: ' + e.message, 'warn');
@@ -686,44 +733,31 @@ function parseCSVFile(file) {
       const bars = parseCSVText(text);
       if (!bars.length) throw new Error('ไม่พบข้อมูลในไฟล์');
 
-      S.allBars = bars;
-      S.csvMeta = { ...meta, filename: file.name };
-      S.source = 'csv';
-      S.sym = meta.sym;
-      S.tf = meta.tf;
-      S.visIdx = Math.min(60, bars.length);
-      S.orders = []; S.oid = 1;
-      S.startBal = +document.getElementById('cCap').value || 100000;
-      S.bal = S.startBal;
+      // Add to multi-timeframe structure
+      if (!S.multiTimeframes[meta.sym]) {
+        S.multiTimeframes[meta.sym] = {};
+      }
+      
+      S.multiTimeframes[meta.sym][meta.tf] = {
+        bars: bars,
+        meta: { ...meta, filename: file.name },
+        filename: file.name
+      };
+
+      // Set as current if this is the first timeframe or if symbol matches current
+      if (!S.currentSymbol || (S.currentSymbol === meta.sym && !S.currentTimeframe)) {
+        switchToTimeframe(meta.sym, meta.tf);
+      } else {
+        // Just add to the list but don't switch
+        updateTimeframeList();
+        notif(`📂 เพิ่ม ${meta.sym} ${meta.tf} สำเร็จ — ${bars.length} แท่ง`, 'csv');
+      }
 
       // Update UI
       document.getElementById('csvPanel').classList.add('show');
-
-      // Show loaded info
-      document.getElementById('csvLoadedInfo').style.display = 'flex';
-      document.getElementById('dropZone').style.display = 'none';
-      document.getElementById('metaSym').textContent = meta.sym;
-      document.getElementById('metaTf').textContent = meta.tf;
-      document.getElementById('metaBars').textContent = bars.length;
-      document.getElementById('metaFrom').textContent = formatDate(bars[0].t);
-      document.getElementById('metaTo').textContent = formatDate(bars[bars.length - 1].t);
-
-      // Set date input min/max values
-      const dateInput = document.getElementById('startDateInput');
-      dateInput.min = formatDate(bars[0].t);
-      dateInput.max = formatDate(bars[bars.length - 1].t);
-      dateInput.value = ''; // Clear previous selection
-
-      // Topbar pills
-      document.getElementById('csvInfo').style.display = 'flex';
-      document.getElementById('csvSymPill').style.display = 'inline-block';
-      document.getElementById('csvSymPill').textContent = meta.sym;
-      document.getElementById('csvTfPill').textContent = meta.tf;
-      document.getElementById('csvRowsPill').textContent = bars.length + ' bars';
+      document.getElementById('timeframeSelector').style.display = 'block';
 
       setStatus('ok', `✓ โหลด CSV สำเร็จ: ${meta.sym} ${meta.tf} | ${bars.length} แท่งเทียน | UTC`);
-      notif(`📂 โหลด ${meta.sym} ${meta.tf} สำเร็จ — ${bars.length} แท่ง`, 'csv');
-      refreshAll();
     } catch (e) {
       setStatus('err', '❌ ' + e.message);
       notif('อ่านไฟล์ไม่ได้: ' + e.message, 'warn');
@@ -800,8 +834,12 @@ function parseCSVText(text) {
 
 function clearCsv() {
   S.allBars = []; S.csvMeta = null; S.visIdx = 0;
+  S.multiTimeframes = {};
+  S.currentSymbol = '';
+  S.currentTimeframe = '';
   document.getElementById('csvLoadedInfo').style.display = 'none';
-  document.getElementById('dropZone').style.display = 'block';
+  document.getElementById('dropZone').style.display = 'block'; // Show drop zone when cleared
+  document.getElementById('timeframeSelector').style.display = 'none';
   document.getElementById('csvInfo').style.display = 'none';
   document.getElementById('csvFileInput').value = '';
   document.getElementById('startDateInput').value = '';
@@ -809,6 +847,220 @@ function clearCsv() {
   document.getElementById('startDateInput').max = '';
   setStatus('ok', 'ลบ CSV แล้ว — เลือกไฟล์ใหม่หรือสลับไป Yahoo Finance');
   refreshAll();
+}
+
+// Switch to specific timeframe
+function switchToTimeframe(symbol, timeframe) {
+  if (!S.multiTimeframes[symbol] || !S.multiTimeframes[symbol][timeframe]) {
+    notif('Timeframe data not found', 'warn');
+    return;
+  }
+
+  const tfData = S.multiTimeframes[symbol][timeframe];
+  
+  // Find matching bar based on current timeframe's date
+  let targetIndex = 0;
+  if (S.currentSymbol && S.currentTimeframe && S.allBars.length > 0) {
+    const currentBar = S.allBars[S.visIdx - 1] || S.allBars[0];
+    targetIndex = findCorrespondingBar(currentBar.t, tfData.bars);
+  }
+  
+  // Update current state
+  S.currentSymbol = symbol;
+  S.currentTimeframe = timeframe;
+  S.allBars = tfData.bars;
+  S.csvMeta = tfData.meta;
+  S.source = 'csv';
+  S.sym = symbol;
+  S.tf = timeframe;
+  S.visIdx = Math.min(targetIndex + 1, S.allBars.length);
+  S.orders = []; S.oid = 1;
+  S.startBal = +document.getElementById('cCap').value || 100000;
+  S.bal = S.startBal;
+
+  // Update UI
+  document.getElementById('csvPanel').classList.add('show');
+  document.getElementById('timeframeSelector').style.display = 'block';
+  
+  // Show loaded info
+  document.getElementById('csvLoadedInfo').style.display = 'flex';
+  document.getElementById('metaSym').textContent = symbol;
+  document.getElementById('metaTf').textContent = timeframe;
+  document.getElementById('metaBars').textContent = S.allBars.length;
+  document.getElementById('metaFrom').textContent = formatDate(S.allBars[0].t);
+  document.getElementById('metaTo').textContent = formatDate(S.allBars[S.allBars.length - 1].t);
+
+  // Set date input min/max values
+  const dateInput = document.getElementById('startDateInput');
+  dateInput.min = formatDate(S.allBars[0].t);
+  dateInput.max = formatDate(S.allBars[S.allBars.length - 1].t);
+  dateInput.value = '';
+
+  // Topbar pills
+  document.getElementById('csvInfo').style.display = 'flex';
+  document.getElementById('csvSymPill').style.display = 'inline-block';
+  document.getElementById('csvSymPill').textContent = symbol;
+  document.getElementById('csvTfPill').textContent = timeframe;
+  document.getElementById('csvRowsPill').textContent = S.allBars.length + ' bars';
+
+  // Update timeframe list UI
+  updateTimeframeList();
+  
+  refreshAll();
+  const currentBarDate = new Date(S.allBars[targetIndex].t).toLocaleDateString('th-TH');
+  notif(`📊 สลับไป ${symbol} ${timeframe} สำเร็จ — ${S.allBars.length} แท่ง | เริ่มที่ ${currentBarDate}`, 'csv');
+}
+
+// Find corresponding bar in different timeframe based on timestamp
+function findCorrespondingBar(currentTimestamp, targetBars) {
+  if (!targetBars || targetBars.length === 0) return 0;
+  
+  const currentDate = new Date(currentTimestamp);
+  
+  // Find the bar that contains or is closest to the current timestamp
+  let closestIndex = 0;
+  let minDiff = Math.abs(targetBars[0].t - currentTimestamp);
+  
+  for (let i = 1; i < targetBars.length; i++) {
+    const bar = targetBars[i];
+    const barTime = new Date(bar.t);
+    
+    // Check if current timestamp falls within this bar's period
+    const nextBarTime = i < targetBars.length - 1 ? new Date(targetBars[i + 1].t) : null;
+    
+    // For different timeframes, we need to check if the current timestamp falls within the bar's range
+    if (isTimestampInBar(currentTimestamp, bar.t, nextBarTime ? nextBarTime.getTime() : null)) {
+      return i;
+    }
+    
+    // Otherwise, find the closest bar
+    const diff = Math.abs(bar.t - currentTimestamp);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closestIndex = i;
+    }
+  }
+  
+  return closestIndex;
+}
+
+// Check if timestamp falls within a bar's period
+function isTimestampInBar(timestamp, barStartTime, barEndTime) {
+  if (!barEndTime) {
+    // For the last bar, just check if it's close enough
+    return Math.abs(timestamp - barStartTime) < getBarDuration(barStartTime);
+  }
+  
+  return timestamp >= barStartTime && timestamp < barEndTime;
+}
+
+// Estimate bar duration based on typical timeframe patterns
+function getBarDuration(timestamp) {
+  const date = new Date(timestamp);
+  const dayOfWeek = date.getUTCDay();
+  const hour = date.getUTCHours();
+  
+  // Common durations in milliseconds
+  const durations = {
+    '1m': 60 * 1000,
+    '5m': 5 * 60 * 1000,
+    '15m': 15 * 60 * 1000,
+    '30m': 30 * 60 * 1000,
+    '1H': 60 * 60 * 1000,
+    '4H': 4 * 60 * 60 * 1000,
+    '1D': 24 * 60 * 60 * 1000,
+    '1W': 7 * 24 * 60 * 60 * 1000
+  };
+  
+  // Try to determine timeframe from the current data
+  if (S.allBars.length > 1) {
+    const interval = S.allBars[1].t - S.allBars[0].t;
+    
+    // Match to closest known duration
+    for (const [tf, duration] of Object.entries(durations)) {
+      if (Math.abs(interval - duration) < duration * 0.5) {
+        return duration;
+      }
+    }
+  }
+  
+  // Default to 1 day if we can't determine
+  return durations['1D'];
+}
+
+// Update timeframe list UI
+function updateTimeframeList() {
+  const listEl = document.getElementById('timeframeList');
+  const hasData = Object.keys(S.multiTimeframes).length > 0;
+  
+  if (!hasData) {
+    listEl.innerHTML = '<div class="empty-timeframes">No timeframes loaded</div>';
+    document.getElementById('timeframeSelector').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('timeframeSelector').style.display = 'block';
+  
+  let html = '';
+  for (const symbol in S.multiTimeframes) {
+    for (const tf in S.multiTimeframes[symbol]) {
+      const tfData = S.multiTimeframes[symbol][tf];
+      const isActive = S.currentSymbol === symbol && S.currentTimeframe === tf;
+      const activeClass = isActive ? 'active' : '';
+      
+      html += `
+        <div class="timeframe-item ${activeClass}" onclick="switchToTimeframe('${symbol}', '${tf}')">
+          <div class="timeframe-item-info">
+            <span class="timeframe-symbol">${symbol}</span>
+            <span class="timeframe-tf">${tf}</span>
+            <span class="timeframe-bars">${tfData.bars.length} bars</span>
+          </div>
+          <div class="timeframe-actions">
+            <button class="timeframe-remove" onclick="event.stopPropagation(); removeTimeframe('${symbol}', '${tf}')">×</button>
+          </div>
+        </div>
+      `;
+    }
+  }
+  
+  listEl.innerHTML = html;
+}
+
+// Remove specific timeframe
+function removeTimeframe(symbol, timeframe) {
+  if (!S.multiTimeframes[symbol] || !S.multiTimeframes[symbol][timeframe]) {
+    return;
+  }
+
+  delete S.multiTimeframes[symbol][timeframe];
+  
+  // Remove symbol entry if no more timeframes
+  if (Object.keys(S.multiTimeframes[symbol]).length === 0) {
+    delete S.multiTimeframes[symbol];
+  }
+
+  // If we removed the current timeframe, switch to another or clear
+  if (S.currentSymbol === symbol && S.currentTimeframe === timeframe) {
+    const remainingSymbols = Object.keys(S.multiTimeframes);
+    if (remainingSymbols.length > 0) {
+      const firstSymbol = remainingSymbols[0];
+      const firstTf = Object.keys(S.multiTimeframes[firstSymbol])[0];
+      switchToTimeframe(firstSymbol, firstTf);
+    } else {
+      clearCsv();
+    }
+  } else {
+    updateTimeframeList();
+  }
+  
+  notif(`🗑️ ลบ ${symbol} ${timeframe} แล้ว`, 'csv');
+}
+
+// Clear all timeframes
+function clearAllTimeframes() {
+  if (confirm('ลบข้อมูลทั้งหมดหรือไม่?')) {
+    clearCsv();
+  }
 }
 
 function formatDate(ms) {
@@ -1599,11 +1851,13 @@ function notif(msg,type){
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────
-async function initializeApp() {
+document.addEventListener('DOMContentLoaded', async function() {
   try {
-    // Initialize IndexedDB
+    console.log('Initializing app...');
+    
+    // Initialize database
     await sessionDB.init();
-    console.log('IndexedDB initialized successfully');
+    console.log('Database initialized');
     
     // Migrate from localStorage if needed
     await migrateFromLocalStorage();
@@ -1613,6 +1867,13 @@ async function initializeApp() {
     
     // Set up initial UI
     resize();
+    
+    // Start auto-save after initialization
+    startAutoSave();
+    // Try to restore auto-saved session
+    restoreAutoSave();
+    
+    console.log('App initialized successfully');
   } catch (error) {
     console.error('Failed to initialize app:', error);
     notif('Failed to initialize application', 'warn');
@@ -1620,21 +1881,6 @@ async function initializeApp() {
     loadDefaultData();
     resize();
   }
-}
-
-// Start the application
-initializeApp().then(() => {
-  // Start auto-save after initialization
-  startAutoSave();
-  
-  // Try to restore auto-saved session
-  restoreAutoSave();
-}).catch(error => {
-  console.error('Failed to initialize app:', error);
-  notif('Failed to initialize application', 'warn');
-  // Fallback to localStorage if IndexedDB fails
-  loadDefaultData();
-  resize();
 });
 </script>
 </body>
