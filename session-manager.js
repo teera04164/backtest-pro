@@ -225,6 +225,10 @@ window.saveSession = async function() {
         bal: S.bal,
         startBal: S.startBal,
         side: S.side,
+        // Multi-timeframe support
+        multiTimeframes: S.multiTimeframes,
+        currentSymbol: S.currentSymbol,
+        currentTimeframe: S.currentTimeframe,
         settings: {
           capital: document.getElementById('cCap').value,
           fee: document.getElementById('cFee').value,
@@ -323,6 +327,24 @@ window.loadSession = async function(sessionId) {
     S.startBal = data.startBal;
     S.side = data.side;
     
+    // Restore multi-timeframe data if available
+    if (data.multiTimeframes) {
+      S.multiTimeframes = data.multiTimeframes;
+      S.currentSymbol = data.currentSymbol || data.sym;
+      S.currentTimeframe = data.currentTimeframe || data.tf;
+    } else {
+      // Legacy session - create single timeframe structure
+      S.multiTimeframes = {};
+      S.multiTimeframes[data.sym] = {};
+      S.multiTimeframes[data.sym][data.tf] = {
+        bars: data.allBars,
+        meta: data.csvMeta,
+        filename: data.csvMeta?.filename || 'legacy'
+      };
+      S.currentSymbol = data.sym;
+      S.currentTimeframe = data.tf;
+    }
+    
     // Restore form settings
     document.getElementById('cCap').value = data.settings.capital;
     document.getElementById('cFee').value = data.settings.fee;
@@ -335,10 +357,11 @@ window.loadSession = async function(sessionId) {
     // Update UI
     if (S.source === 'csv' && S.csvMeta) {
       document.getElementById('csvPanel').classList.add('show');
+      document.getElementById('timeframeSelector').style.display = 'block';
       document.getElementById('csvLoadedInfo').style.display = 'flex';
-      document.getElementById('dropZone').style.display = 'none';
-      document.getElementById('metaSym').textContent = S.csvMeta.sym;
-      document.getElementById('metaTf').textContent = S.csvMeta.tf;
+      // Don't hide drop zone - keep it visible for multiple uploads
+      document.getElementById('metaSym').textContent = S.currentSymbol;
+      document.getElementById('metaTf').textContent = S.currentTimeframe;
       document.getElementById('metaBars').textContent = S.allBars.length;
       document.getElementById('metaFrom').textContent = formatDate(S.allBars[0].t);
       document.getElementById('metaTo').textContent = formatDate(S.allBars[S.allBars.length - 1].t);
@@ -351,9 +374,24 @@ window.loadSession = async function(sessionId) {
       // Topbar pills
       document.getElementById('csvInfo').style.display = 'flex';
       document.getElementById('csvSymPill').style.display = 'inline-block';
-      document.getElementById('csvSymPill').textContent = S.csvMeta.sym;
-      document.getElementById('csvTfPill').textContent = S.csvMeta.tf;
+      document.getElementById('csvSymPill').textContent = S.currentSymbol;
+      document.getElementById('csvTfPill').textContent = S.currentTimeframe;
       document.getElementById('csvRowsPill').textContent = S.allBars.length + ' bars';
+      
+      // Update timeframe list and shortcuts
+      if (typeof updateTimeframeList === 'function') {
+        updateTimeframeList();
+      }
+      
+      // Update timeframe shortcuts
+      const shortcutsEl = document.getElementById('tfShortcuts');
+      if (shortcutsEl) {
+        if (Object.keys(S.multiTimeframes).length > 0) {
+          shortcutsEl.style.display = 'flex';
+        } else {
+          shortcutsEl.style.display = 'none';
+        }
+      }
     }
     
     closeLoadSessionDialog();

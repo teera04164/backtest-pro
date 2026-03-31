@@ -588,6 +588,14 @@ window.restoreAutoSave = async function() {
         
         // Update timeframe list
         updateTimeframeList();
+        
+        // Update timeframe shortcuts
+        const shortcutsEl = document.getElementById('tfShortcuts');
+        if (Object.keys(S.multiTimeframes).length > 0) {
+          shortcutsEl.style.display = 'flex';
+        } else {
+          shortcutsEl.style.display = 'none';
+        }
       }
       
       refreshAll();
