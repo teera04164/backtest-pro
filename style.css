@@ -26,6 +26,17 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .timeframe-item:hover .timeframe-remove{opacity:1;}
 .empty-timeframes{color:var(--muted);font-size:10px;text-align:center;padding:12px;width:100%;}
 
+/* Edit Dialog Timeframe Selector */
+.tf-selector{display:flex;flex-direction:column;gap:8px;}
+.tf-selector-loading{color:var(--muted);font-size:10px;text-align:center;padding:12px;}
+.tf-option{display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;cursor:pointer;transition:all .15s;}
+.tf-option:hover{border-color:var(--accent);background:rgba(59,130,246,.1);}
+.tf-option.selected{border-color:var(--accent);background:rgba(59,130,246,.2);color:var(--accent);}
+.tf-option-info{flex:1;}
+.tf-option-symbol{font-family:'Space Mono',monospace;font-size:11px;font-weight:600;}
+.tf-option-tf{background:var(--bg);padding:2px 6px;border-radius:3px;font-size:9px;color:var(--muted);}
+.tf-option-bars{font-size:9px;color:var(--muted);}
+
 /* ── TOPBAR ── */
 .topbar{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap;}
 .logo{font-family:'Space Mono',monospace;font-size:14px;font-weight:700;background:linear-gradient(135deg,#3b82f6,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;white-space:nowrap;}

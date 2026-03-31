@@ -243,6 +243,10 @@
           <span id="openPnlPct" style="font-weight:600;font-family:'Space Mono',monospace">0.0%</span>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px">
+          <span style="color:var(--muted)">Total Amount:</span>
+          <span id="totalAmount" style="font-weight:600;font-family:'Space Mono',monospace">$0.00</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px">
           <span style="color:var(--muted)">Avg Entry Price:</span>
           <span id="avgEntryPrice" style="font-weight:600;font-family:'Space Mono',monospace">—</span>
         </div>
@@ -281,6 +285,24 @@
       <!-- Summary Section -->
       <div class="session-summary">
         <h4>Session Summary:</h4>
+        <div class="pnl-summary" id="pnlSummary" style="display:none;">
+          <div class="pnl-row">
+            <span class="pnl-label">Total P&L:</span>
+            <span class="pnl-value" id="totalPnlValue">$0.00</span>
+          </div>
+          <div class="pnl-row">
+            <span class="pnl-label">Win Rate:</span>
+            <span class="pnl-value" id="winRateValue">0%</span>
+          </div>
+          <div class="pnl-row">
+            <span class="pnl-label">Total Trades:</span>
+            <span class="pnl-value" id="totalTradesValue">0</span>
+          </div>
+          <div class="pnl-row">
+            <span class="pnl-label">Avg Hold Time:</span>
+            <span class="pnl-value" id="avgHoldTimeValue">0d 0h 0m</span>
+          </div>
+        </div>
         <div class="summary-grid">
           <div class="summary-item">
             <span class="summary-label">Symbol:</span>
@@ -365,11 +387,19 @@
         <textarea id="editSessionNotesInput" placeholder="Add notes about this trading session..." rows="3"></textarea>
       </div>
       
+      <!-- Timeframe Selection -->
+      <div class="form-group">
+        <label>Select Timeframe to Edit/Update:</label>
+        <div id="editTimeframeSelector" class="tf-selector">
+          <div class="tf-selector-loading">Loading timeframes...</div>
+        </div>
+      </div>
+      
       <!-- Chart Data Update Section -->
       <div class="form-group">
         <label>Update Chart Data (optional):</label>
         <div class="chart-update-section">
-          <p class="chart-update-desc">Upload a new CSV file to extend the existing chart data with additional dates and price data.</p>
+          <p class="chart-update-desc">Upload a new CSV file to extend the selected timeframe with additional dates and price data.</p>
           <div class="file-upload-area">
             <input type="file" id="updateDataFileInput" accept=".csv" style="display:none" onchange="handleUpdateDataFile(event)">
             <div class="file-upload-drop-zone" onclick="document.getElementById('updateDataFileInput').click()">
@@ -627,6 +657,262 @@ window.stopAutoSave = function() {
 window.addEventListener('beforeunload', function() {
   autoSaveSession();
 });
+
+// ── EDIT SESSION DIALOG ─────────────────────────────────────────────────────────────
+let currentEditSessionId = null;
+let selectedEditTimeframe = null;
+let pendingUpdateData = null;
+
+window.showEditSessionDialog = async function(sessionId) {
+  try {
+    currentEditSessionId = sessionId;
+    const session = await sessionDB.getSession(sessionId);
+    
+    if (!session) {
+      notif('Session not found', 'warn');
+      return;
+    }
+    
+    // Populate form fields
+    document.getElementById('editSessionNameInput').value = session.name;
+    document.getElementById('editSessionNotesInput').value = session.notes || '';
+    
+    // Populate timeframe selector
+    const selectorEl = document.getElementById('editTimeframeSelector');
+    const data = session.data;
+    
+    if (data.multiTimeframes && Object.keys(data.multiTimeframes).length > 0) {
+      let html = '';
+      for (const symbol in data.multiTimeframes) {
+        for (const tf in data.multiTimeframes[symbol]) {
+          const tfData = data.multiTimeframes[symbol][tf];
+          const isActive = (data.currentSymbol === symbol && data.currentTimeframe === tf);
+          const selectedClass = isActive ? 'selected' : '';
+          
+          html += `
+            <div class="tf-option ${selectedClass}" onclick="selectEditTimeframe('${symbol}', '${tf}')">
+              <div class="tf-option-info">
+                <span class="tf-option-symbol">${symbol}</span>
+                <span class="tf-option-tf">${tf}</span>
+                <span class="tf-option-bars">${tfData.bars.length} bars</span>
+              </div>
+            </div>
+          `;
+        }
+      }
+      selectorEl.innerHTML = html;
+      
+      // Auto-select current timeframe
+      if (data.currentSymbol && data.currentTimeframe) {
+        selectEditTimeframe(data.currentSymbol, data.currentTimeframe);
+      }
+    } else {
+      // Legacy session - single timeframe
+      selectorEl.innerHTML = `
+        <div class="tf-option selected" onclick="selectEditTimeframe('${data.sym}', '${data.tf}')">
+          <div class="tf-option-info">
+            <span class="tf-option-symbol">${data.sym}</span>
+            <span class="tf-option-tf">${data.tf}</span>
+            <span class="tf-option-bars">${data.allBars.length} bars</span>
+          </div>
+        </div>
+      `;
+      selectEditTimeframe(data.sym, data.tf);
+    }
+    
+    // Clear any pending update data
+    clearUpdateData();
+    
+    // Show dialog
+    document.getElementById('editSessionDialog').style.display = 'flex';
+  } catch (error) {
+    console.error('Failed to show edit dialog:', error);
+    notif('Failed to open edit dialog', 'warn');
+  }
+}
+
+window.selectEditTimeframe = function(symbol, timeframe) {
+  selectedEditTimeframe = { symbol, timeframe };
+  
+  // Update UI selection
+  const options = document.querySelectorAll('.tf-option');
+  options.forEach(option => {
+    option.classList.remove('selected');
+  });
+  
+  // Find and select the clicked option
+  const clickedOption = Array.from(options).find(option => {
+    const optionSymbol = option.querySelector('.tf-option-symbol').textContent;
+    const optionTf = option.querySelector('.tf-option-tf').textContent;
+    return optionSymbol === symbol && optionTf === timeframe;
+  });
+  
+  if (clickedOption) {
+    clickedOption.classList.add('selected');
+  }
+}
+
+window.handleUpdateDataFile = function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  if (!selectedEditTimeframe) {
+    notif('Please select a timeframe first', 'warn');
+    return;
+  }
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const csvText = e.target.result;
+      const meta = parseFilename(file.name);
+      const bars = parseCSVText(csvText);
+      
+      if (!bars.length) throw new Error('No valid data found');
+      
+      // Validate symbol and timeframe match
+      if (meta.sym !== selectedEditTimeframe.symbol || meta.tf !== selectedEditTimeframe.timeframe) {
+        notif(`File must match selected timeframe: ${selectedEditTimeframe.symbol} ${selectedEditTimeframe.timeframe}`, 'warn');
+        return;
+      }
+      
+      // Store pending update data
+      pendingUpdateData = {
+        symbol: meta.sym,
+        timeframe: meta.tf,
+        bars: bars,
+        meta: meta,
+        filename: file.name
+      };
+      
+      // Show preview
+      showUpdateDataPreview(bars);
+      
+    } catch (error) {
+      notif('Failed to parse CSV: ' + error.message, 'warn');
+    }
+  };
+  reader.readAsText(file);
+}
+
+window.showUpdateDataPreview = function(bars) {
+  const previewEl = document.getElementById('updateDataPreview');
+  const newBarsCount = document.getElementById('newBarsCount');
+  const newDateRange = document.getElementById('newDateRange');
+  const totalBarsAfterUpdate = document.getElementById('totalBarsAfterUpdate');
+  
+  // Update preview stats
+  newBarsCount.textContent = bars.length;
+  newDateRange.textContent = `${formatDate(bars[0].t)} - ${formatDate(bars[bars.length - 1].t)}`;
+  
+  // Calculate total bars after update (this is approximate since we don't know the exact merge result yet)
+  const currentBars = selectedEditTimeframe ? 
+    (S.multiTimeframes[selectedEditTimeframe.symbol] && S.multiTimeframes[selectedEditTimeframe.symbol][selectedEditTimeframe.timeframe]) ?
+      S.multiTimeframes[selectedEditTimeframe.symbol][selectedEditTimeframe.timeframe].bars.length : 0 : 0;
+  totalBarsAfterUpdate.textContent = currentBars + bars.length;
+  
+  previewEl.style.display = 'block';
+}
+
+window.clearUpdateData = function() {
+  pendingUpdateData = null;
+  document.getElementById('updateDataPreview').style.display = 'none';
+  document.getElementById('updateDataFileInput').value = '';
+}
+
+window.updateSession = async function() {
+  if (!currentEditSessionId) return;
+  
+  try {
+    const name = document.getElementById('editSessionNameInput').value.trim();
+    const notes = document.getElementById('editSessionNotesInput').value.trim();
+    
+    if (!name) {
+      notif('Please enter a session name', 'warn');
+      return;
+    }
+    
+    // Get current session
+    const session = await sessionDB.getSession(currentEditSessionId);
+    if (!session) return;
+    
+    // Update basic info
+    session.name = name;
+    session.notes = notes;
+    session.savedAt = new Date().toISOString();
+    
+    // Apply data updates if pending
+    if (pendingUpdateData && selectedEditTimeframe) {
+      const { symbol, timeframe, bars, meta, filename } = pendingUpdateData;
+      
+      // Ensure multiTimeframes structure exists
+      if (!session.data.multiTimeframes) {
+        session.data.multiTimeframes = {};
+      }
+      if (!session.data.multiTimeframes[symbol]) {
+        session.data.multiTimeframes[symbol] = {};
+      }
+      
+      // Get existing bars and merge with new data
+      const existingTfData = session.data.multiTimeframes[symbol][timeframe];
+      let existingBars = existingTfData ? existingTfData.bars : [];
+      
+      // Merge bars (remove duplicates, sort by time)
+      const allBars = mergeBars(existingBars, bars);
+      
+      // Update timeframe data
+      session.data.multiTimeframes[symbol][timeframe] = {
+        bars: allBars,
+        meta: { ...meta, filename },
+        filename: filename
+      };
+      
+      // Update current data if this is the active timeframe
+      if (session.data.currentSymbol === symbol && session.data.currentTimeframe === timeframe) {
+        session.data.allBars = allBars;
+        session.data.csvMeta = { ...meta, filename };
+      }
+      
+      notif(`Updated ${symbol} ${timeframe} with ${bars.length} new bars`, 'pos');
+    }
+    
+    // Save updated session
+    await sessionDB.updateSession(session);
+    
+    closeEditSessionDialog();
+    showLoadSessionDialog(); // Refresh the list
+    notif(`Session "${name}" updated successfully!`, 'pos');
+    
+  } catch (error) {
+    console.error('Failed to update session:', error);
+    notif('Failed to update session', 'warn');
+  }
+}
+
+window.mergeBars = function(existingBars, newBars) {
+  // Create a map to deduplicate by timestamp
+  const barsMap = new Map();
+  
+  // Add existing bars
+  existingBars.forEach(bar => {
+    barsMap.set(bar.t, bar);
+  });
+  
+  // Add new bars (will overwrite duplicates with same timestamp)
+  newBars.forEach(bar => {
+    barsMap.set(bar.t, bar);
+  });
+  
+  // Convert back to array and sort by timestamp
+  return Array.from(barsMap.values()).sort((a, b) => a.t - b.t);
+}
+
+window.closeEditSessionDialog = function() {
+  document.getElementById('editSessionDialog').style.display = 'none';
+  currentEditSessionId = null;
+  selectedEditTimeframe = null;
+  pendingUpdateData = null;
+}
 
 // ── INITIALIZATION ───────────────────────────────────────────────────────────
 function toggleCsvPanel() {
@@ -1622,10 +1908,86 @@ function renderOrders(){
   const all=[...S.orders].reverse();
   document.getElementById('ordCnt').textContent=all.length;
   if(!all.length){body.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:12px">No orders yet</td></tr>';return;}
+  
+  // Calculate P&L summary
+  const closedOrders = all.filter(o => o.status === 'closed');
+  const totalPnl = closedOrders.reduce((sum, o) => sum + o.pnl, 0);
+  const winCount = closedOrders.filter(o => o.pnl > 0).length;
+  const lossCount = closedOrders.filter(o => o.pnl < 0).length;
+  const totalTrades = closedOrders.length;
+  const winRate = totalTrades > 0 ? (winCount / totalTrades * 100) : 0;
+  
+  // Calculate total hold time for closed orders
+  let totalHoldTimeMs = 0;
+  let holdTimeCount = 0;
+  
+  closedOrders.forEach(o => {
+    if (o.openTime && o.closeTime) {
+      totalHoldTimeMs += (o.closeTime - o.openTime);
+      holdTimeCount++;
+    }
+  });
+  
+  const avgHoldTimeMs = holdTimeCount > 0 ? totalHoldTimeMs / holdTimeCount : 0;
+  const avgHoldTimeDays = Math.floor(avgHoldTimeMs / (1000 * 60 * 60 * 24));
+  const avgHoldTimeHours = Math.floor((avgHoldTimeMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const avgHoldTimeMins = Math.floor((avgHoldTimeMs % (1000 * 60 * 60)) / (1000 * 60));
+  
+  let avgHoldTimeText = '';
+  if (avgHoldTimeDays > 0) {
+    avgHoldTimeText = `${avgHoldTimeDays}วัน ${avgHoldTimeHours}ชม.`;
+  } else if (avgHoldTimeHours > 0) {
+    avgHoldTimeText = `${avgHoldTimeHours}ชม. ${avgHoldTimeMins}นาที`;
+  } else {
+    avgHoldTimeText = `${avgHoldTimeMins}นาที`;
+  }
+  
+  // Update P&L summary display
+  const summaryEl = document.getElementById('pnlSummary');
+  const totalPnlEl = document.getElementById('totalPnlValue');
+  const winRateEl = document.getElementById('winRateValue');
+  const totalTradesEl = document.getElementById('totalTradesValue');
+  const avgHoldTimeEl = document.getElementById('avgHoldTimeValue');
+  
+  if (totalTrades > 0) {
+    summaryEl.style.display = 'block';
+    totalPnlEl.textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2);
+    totalPnlEl.style.color = totalPnl >= 0 ? 'var(--green)' : 'var(--red)';
+    winRateEl.textContent = winRate.toFixed(1) + '%';
+    winRateEl.style.color = winRate >= 50 ? 'var(--green)' : 'var(--red)';
+    totalTradesEl.textContent = totalTrades;
+    
+    // Add average hold time display
+    if (avgHoldTimeEl) {
+      avgHoldTimeEl.textContent = avgHoldTimeText;
+      avgHoldTimeEl.style.color = 'var(--text)';
+    }
+  } else {
+    summaryEl.style.display = 'none';
+  }
+  
   body.innerHTML=all.map(o=>{
     const pnlTxt=o.status==='closed'?(o.pnl>=0?'+':'')+'$'+o.pnl.toFixed(2):'—';
     const pc=o.status==='closed'?(o.pnl>=0?'var(--green)':'var(--red)'):'var(--muted)';
     const rTag=o.reason?`<span class="tag tag-${o.reason.toLowerCase()}">${o.reason}</span>`:(o.status==='closed'?'<span class="tag tag-manual">Manual</span>':'—');
+    
+    // Calculate individual order hold time
+    let orderHoldTime = '';
+    if (o.status === 'closed' && o.openTime && o.closeTime) {
+      const holdTimeMs = o.closeTime - o.openTime;
+      const holdDays = Math.floor(holdTimeMs / (1000 * 60 * 60 * 24));
+      const holdHours = Math.floor((holdTimeMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const holdMins = Math.floor((holdTimeMs % (1000 * 60 * 60)) / (1000 * 60));
+      
+      if (holdDays > 0) {
+        orderHoldTime = ` | คงอยู่ ${holdDays}วัน ${holdHours}ชม.`;
+      } else if (holdHours > 0) {
+        orderHoldTime = ` | คงอยู่ ${holdHours}ชม. ${holdMins}นาที`;
+      } else {
+        orderHoldTime = ` | คงอยู่ ${holdMins}นาที`;
+      }
+    }
+    
     return`<tr>
       <td><span class="tag tag-${o.side}">${o.side.toUpperCase()}</span></td>
       <td style="color:var(--muted)">${o.type}</td>
@@ -1635,6 +1997,7 @@ function renderOrders(){
       <td style="font-family:'Space Mono',monospace;color:${pc};font-weight:700">${pnlTxt}</td>
       <td>${rTag}</td>
       <td><span class="tag tag-${o.status}">${o.status}</span></td>
+      <td style="font-family:'Space Mono',monospace;color:var(--muted);font-size:10px;">${orderHoldTime}</td>
     </tr>`;
   }).join('');
 }
@@ -1665,11 +2028,13 @@ function renderPos(){
   const pnlEl = document.getElementById('openPnl');
   const pctEl = document.getElementById('openPnlPct');
   const avgPriceEl = document.getElementById('avgEntryPrice');
+  const totalAmountEl = document.getElementById('totalAmount');
   
   if(open.length){
     const totalPortfolioValue = S.startBal + S.orders.filter(o=>o.status==='closed').reduce((sum,o)=>sum+o.pnl,0);
     const pct = totalPortfolioValue > 0 ? (totalUnrealized / totalPortfolioValue * 100) : 0;
     const avgPrice = totalQuantity > 0 ? totalValue / totalQuantity : 0;
+    const totalPositionValue = open.reduce((sum, o) => sum + (o.qty * o.lev), 0);
     
     pnlEl.textContent = (totalUnrealized >= 0 ? '+' : '') + '$' + totalUnrealized.toFixed(2);
     pnlEl.style.color = totalUnrealized >= 0 ? 'var(--green)' : 'var(--red)';
@@ -1677,6 +2042,12 @@ function renderPos(){
     pctEl.style.color = totalUnrealized >= 0 ? 'var(--green)' : 'var(--red)';
     avgPriceEl.textContent = fmtP(avgPrice);
     avgPriceEl.style.color = 'var(--accent)';
+    
+    // Update total amount
+    if (totalAmountEl) {
+      totalAmountEl.textContent = '$' + totalPositionValue.toFixed(2);
+      totalAmountEl.style.color = 'var(--text)';
+    }
   } else {
     pnlEl.textContent = '$0.00';
     pnlEl.style.color = 'var(--muted)';
@@ -1684,6 +2055,12 @@ function renderPos(){
     pctEl.style.color = 'var(--muted)';
     avgPriceEl.textContent = '—';
     avgPriceEl.style.color = 'var(--muted)';
+    
+    // Clear total amount
+    if (totalAmountEl) {
+      totalAmountEl.textContent = '$0.00';
+      totalAmountEl.style.color = 'var(--muted)';
+    }
   }
   
   if(!open.length){list.innerHTML='<div class="empty">No open positions</div>';return;}
@@ -1714,7 +2091,32 @@ function renderPos(){
   }).join('');
 }
 
-function refreshAll(){draw();updateProgressBar();updateStats();syncBal();renderPos();renderOrders();}
+function updateSessionSummary() {
+  // Update Symbol and Timeframe
+  const symbolEl = document.getElementById('summarySymbol');
+  const timeframeEl = document.getElementById('summaryTimeframe');
+  const currentBarEl = document.getElementById('summaryCurrentBar');
+  
+  if (symbolEl) {
+    symbolEl.textContent = S.sym || '—';
+    symbolEl.style.color = S.sym ? 'var(--text)' : 'var(--muted)';
+  }
+  
+  if (timeframeEl) {
+    timeframeEl.textContent = S.tf || '—';
+    timeframeEl.style.color = S.tf ? 'var(--text)' : 'var(--muted)';
+  }
+  
+  if (currentBarEl && S.allBars.length > 0 && S.visIdx >= 0) {
+    const currentBar = S.allBars[S.visIdx];
+    const barNumber = S.visIdx + 1;
+    const totalBars = S.allBars.length;
+    currentBarEl.textContent = `#${barNumber}/${totalBars} (${formatDate(currentBar.t)})`;
+    currentBarEl.style.color = 'var(--text)';
+  }
+}
+
+function refreshAll(){draw();updateProgressBar();updateStats();syncBal();renderPos();renderOrders();updateSessionSummary();}
 
 // ── ORDERS ────────────────────────────────────────────────────────────────
 function quickPlaceOrder(side) {

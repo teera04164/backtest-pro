@@ -420,27 +420,34 @@ window.deleteSession = async function(sessionId) {
 
 window.editSession = async function(sessionId) {
   try {
-    const session = await sessionDB.getSession(sessionId);
-    
-    if (!session) {
-      notif('Session not found', 'warn');
-      return;
+    // Use the new edit dialog function from index.html
+    if (typeof showEditSessionDialog === 'function') {
+      showEditSessionDialog(sessionId);
+      closeLoadSessionDialog(); // Close the load dialog
+    } else {
+      // Fallback to old behavior if new function not available
+      const session = await sessionDB.getSession(sessionId);
+      
+      if (!session) {
+        notif('Session not found', 'warn');
+        return;
+      }
+      
+      // Store current editing session ID
+      S.editingSessionId = sessionId;
+      
+      // Populate edit form
+      document.getElementById('editSessionNameInput').value = session.name;
+      document.getElementById('editSessionNotesInput').value = session.notes || '';
+      
+      // Clear any previous update data
+      sessionUpdateData = null;
+      clearUpdateData();
+      
+      // Show edit dialog
+      document.getElementById('editSessionDialog').style.display = 'flex';
+      document.getElementById('editSessionNameInput').focus();
     }
-    
-    // Store current editing session ID
-    S.editingSessionId = sessionId;
-    
-    // Populate edit form
-    document.getElementById('editSessionNameInput').value = session.name;
-    document.getElementById('editSessionNotesInput').value = session.notes || '';
-    
-    // Clear any previous update data
-    sessionUpdateData = null;
-    clearUpdateData();
-    
-    // Show edit dialog
-    document.getElementById('editSessionDialog').style.display = 'flex';
-    document.getElementById('editSessionNameInput').focus();
   } catch (error) {
     console.error('Failed to edit session:', error);
     notif('Failed to edit session', 'warn');
