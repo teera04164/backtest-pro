@@ -19,6 +19,11 @@
     <span style="font-size:10px;color:var(--muted)" id="csvRowsPill"></span>
   </div>
 
+  <!-- Timeframe shortcuts (shown when timeframes loaded) -->
+  <div class="tf-shortcuts" id="tfShortcuts" style="display:none">
+    <span class="tf-shortcuts-label">TF:</span>
+  </div>
+
   <button class="abtn" style="padding:4px 12px;font-size:11px" onclick="toggleCsvPanel()">📂 Import CSV</button>
 
   <div class="spacer"></div>
@@ -618,15 +623,8 @@ window.addEventListener('beforeunload', function() {
 // ── INITIALIZATION ───────────────────────────────────────────────────────────
 function toggleCsvPanel() {
   const panel = document.getElementById('csvPanel');
-  const isVisible = panel.classList.contains('show');
   panel.classList.toggle('show');
-  console.log('CSV Panel toggled. Was visible:', isVisible, 'Now visible:', !isVisible);
-  
-  // Force show panel for testing
-  if (!panel.classList.contains('show')) {
-    panel.style.display = 'block';
-    console.log('Force showing panel with inline style');
-  }
+  console.log('CSV Panel toggled:', panel.classList.contains('show'));
 }
 
 function loadDefaultData() {
@@ -840,6 +838,7 @@ function clearCsv() {
   document.getElementById('csvLoadedInfo').style.display = 'none';
   document.getElementById('dropZone').style.display = 'block'; // Show drop zone when cleared
   document.getElementById('timeframeSelector').style.display = 'none';
+  document.getElementById('tfShortcuts').style.display = 'none';
   document.getElementById('csvInfo').style.display = 'none';
   document.getElementById('csvFileInput').value = '';
   document.getElementById('startDateInput').value = '';
@@ -850,7 +849,7 @@ function clearCsv() {
 }
 
 // Switch to specific timeframe
-function switchToTimeframe(symbol, timeframe) {
+function switchToTimeframe(symbol, timeframe, keepPanelClosed = false) {
   if (!S.multiTimeframes[symbol] || !S.multiTimeframes[symbol][timeframe]) {
     notif('Timeframe data not found', 'warn');
     return;
@@ -878,8 +877,10 @@ function switchToTimeframe(symbol, timeframe) {
   S.startBal = +document.getElementById('cCap').value || 100000;
   S.bal = S.startBal;
 
-  // Update UI
-  document.getElementById('csvPanel').classList.add('show');
+  // Update UI - only show panel if not explicitly closed
+  if (!keepPanelClosed) {
+    document.getElementById('csvPanel').classList.add('show');
+  }
   document.getElementById('timeframeSelector').style.display = 'block';
   
   // Show loaded info
@@ -991,16 +992,46 @@ function getBarDuration(timestamp) {
 // Update timeframe list UI
 function updateTimeframeList() {
   const listEl = document.getElementById('timeframeList');
+  const shortcutsEl = document.getElementById('tfShortcuts');
   const hasData = Object.keys(S.multiTimeframes).length > 0;
   
   if (!hasData) {
     listEl.innerHTML = '<div class="empty-timeframes">No timeframes loaded</div>';
+    shortcutsEl.style.display = 'none';
     document.getElementById('timeframeSelector').style.display = 'none';
     return;
   }
 
   document.getElementById('timeframeSelector').style.display = 'block';
+  shortcutsEl.style.display = 'flex';
   
+  // Generate shortcuts HTML
+  let shortcutsHtml = '<span class="tf-shortcuts-label">TF:</span>';
+  
+  // Group timeframes by symbol
+  const symbols = Object.keys(S.multiTimeframes);
+  if (symbols.length === 1) {
+    // Single symbol - show all timeframes
+    const symbol = symbols[0];
+    for (const tf in S.multiTimeframes[symbol]) {
+      const isActive = S.currentSymbol === symbol && S.currentTimeframe === tf;
+      const activeClass = isActive ? 'active' : '';
+      shortcutsHtml += `<button class="tf-shortcut-btn ${activeClass}" onclick="switchToTimeframe('${symbol}', '${tf}', true)">${tf}</button>`;
+    }
+  } else {
+    // Multiple symbols - show symbol + timeframe
+    for (const symbol in S.multiTimeframes) {
+      for (const tf in S.multiTimeframes[symbol]) {
+        const isActive = S.currentSymbol === symbol && S.currentTimeframe === tf;
+        const activeClass = isActive ? 'active' : '';
+        shortcutsHtml += `<button class="tf-shortcut-btn ${activeClass}" onclick="switchToTimeframe('${symbol}', '${tf}', true)">${symbol}-${tf}</button>`;
+      }
+    }
+  }
+  
+  shortcutsEl.innerHTML = shortcutsHtml;
+  
+  // Generate full list HTML
   let html = '';
   for (const symbol in S.multiTimeframes) {
     for (const tf in S.multiTimeframes[symbol]) {
@@ -1013,7 +1044,7 @@ function updateTimeframeList() {
           <div class="timeframe-item-info">
             <span class="timeframe-symbol">${symbol}</span>
             <span class="timeframe-tf">${tf}</span>
-            <span class="timeframe-bars">${tfData.bars.length} bars</span>
+            <span class="timeframe-bars">${tfData.bars.length}</span>
           </div>
           <div class="timeframe-actions">
             <button class="timeframe-remove" onclick="event.stopPropagation(); removeTimeframe('${symbol}', '${tf}')">×</button>
